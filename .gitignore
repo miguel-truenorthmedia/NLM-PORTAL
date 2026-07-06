@@ -11,7 +11,15 @@ frontend/.env.production
 
 # Build output
 frontend/dist/
+website/dist/
 dist/
+
+# Website dependencies (install on server during deploy)
+website/node_modules/
+
+# Accidental junk from website import
+website/tatus*
+website/ers*
 
 # Logs
 *.log

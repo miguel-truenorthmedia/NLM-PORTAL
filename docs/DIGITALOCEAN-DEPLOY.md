@@ -217,7 +217,50 @@ After that, every `git push` to `main` runs `scripts/deploy.sh` on the server au
 
 ---
 
-## Checklist
+## Part 6 — Combined domain (marketing site + portal at /admin)
+
+Marketing site lives in `website/`. Portal is at `/admin` on the same domain.
+
+### DNS
+
+Point both records to your droplet IP (`67.205.180.116`):
+
+| Type | Name | Value |
+|------|------|-------|
+| A | `@` | `67.205.180.116` |
+| A | `www` | `67.205.180.116` |
+
+### One-time nginx (replaces the IP-only `nlm-portal` site)
+
+```bash
+sudo cp /var/www/nlm-portal/nginx/northernleadsmedia.com.conf /etc/nginx/sites-available/
+sudo ln -sf /etc/nginx/sites-available/northernleadsmedia.com.conf /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/nlm-portal /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d northernleadsmedia.com -d www.northernleadsmedia.com
+```
+
+### Deploy (builds website + portal)
+
+```bash
+cd /var/www/nlm-portal
+bash scripts/deploy.sh
+```
+
+This publishes:
+
+- `website/dist/` → `/var/www/northernleadsmedia.com/`
+- `frontend/dist/` → `/var/www/northernleadsmedia.com/admin/`
+
+### URLs
+
+| URL | App |
+|-----|-----|
+| `https://www.northernleadsmedia.com/` | Company website |
+| `https://www.northernleadsmedia.com/admin` | NLM Portal |
+| `https://www.northernleadsmedia.com/api/health` | API health check |
+
+---
 
 | Step | Done |
 |------|------|
