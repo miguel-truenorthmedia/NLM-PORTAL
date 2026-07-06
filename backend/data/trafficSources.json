@@ -1,0 +1,19 @@
+[
+  {
+    "id": "bigo",
+    "label": "BIGO",
+    "spendMethod": "manual"
+  },
+  {
+    "id": "facebook",
+    "label": "Facebook",
+    "spendMethod": "api",
+    "apiProvider": "facebook-ads"
+  },
+  {
+    "id": "google",
+    "label": "Google Ads",
+    "spendMethod": "api",
+    "apiProvider": "google-ads"
+  }
+]

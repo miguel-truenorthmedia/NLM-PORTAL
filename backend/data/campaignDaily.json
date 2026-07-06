@@ -1,0 +1,42 @@
+[
+  {
+    "date": "2026-06-29",
+    "adAccountId": "franz-fe-1",
+    "trafficSourceId": "bigo",
+    "amount": 86.33,
+    "campaign": "Franz - FE - 1",
+    "source": "manual"
+  },
+  {
+    "date": "2026-06-30",
+    "adAccountId": "franz-fe-1",
+    "trafficSourceId": "bigo",
+    "amount": 69.75,
+    "campaign": "Franz - FE - 1",
+    "source": "manual"
+  },
+  {
+    "date": "2026-07-01",
+    "adAccountId": "franz-fe-1",
+    "trafficSourceId": "bigo",
+    "amount": 36.95,
+    "campaign": "Franz - FE - 1",
+    "source": "manual"
+  },
+  {
+    "date": "2026-07-02",
+    "adAccountId": "franz-fe-1",
+    "trafficSourceId": "bigo",
+    "amount": 51.64,
+    "campaign": "Franz - FE - 1",
+    "source": "manual"
+  },
+  {
+    "date": "2026-07-03",
+    "adAccountId": "franz-fe-1",
+    "trafficSourceId": "bigo",
+    "amount": 237.94,
+    "campaign": "Franz - FE - 1",
+    "source": "manual"
+  }
+]
