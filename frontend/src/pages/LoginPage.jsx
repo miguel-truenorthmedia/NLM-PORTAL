@@ -43,8 +43,6 @@ export default function LoginPage() {
     <div className="login-page">
       <div className="login-card">
         <img src={logoSrc} alt="NorthernLeads Media" className="login-logo" />
-        <h1>Portal Sign In</h1>
-        <p className="login-subtitle">NorthernLeads Media internal dashboard</p>
 
         <form className="login-form" onSubmit={handleSubmit}>
           <label>

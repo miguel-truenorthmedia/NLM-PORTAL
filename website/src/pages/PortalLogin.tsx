@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import logo from "@/assets/northerleads-light-logo.png";
@@ -71,10 +71,8 @@ const PortalLogin = () => {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-md shadow-lg">
-        <CardHeader className="text-center space-y-3">
+        <CardHeader className="text-center">
           <img src={logo} alt="Northern Leads Media" className="h-10 mx-auto" />
-          <CardTitle className="text-2xl">Portal Sign In</CardTitle>
-          <CardDescription>Northern Leads Media internal dashboard</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
