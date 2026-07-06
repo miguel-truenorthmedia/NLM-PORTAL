@@ -28,6 +28,7 @@ import CallCenterSentimentAnalysis from "./pages/blog/CallCenterSentimentAnalysi
 import MiddleFunnelContentLawyers from "./pages/blog/MiddleFunnelContentLawyers";
 import VirtualQueuingCallCenter from "./pages/blog/VirtualQueuingCallCenter";
 import CallCenterProblemsSolutions from "./pages/blog/CallCenterProblemsSolutions";
+import PortalLogin from "./pages/PortalLogin";
 
 const queryClient = new QueryClient();
 
@@ -39,6 +40,7 @@ const App = () => (
       <BrowserRouter>
         <ScrollToTop />
         <Routes>
+          <Route path="/login" element={<PortalLogin />} />
           <Route path="/" element={<Index />} />
           <Route path="/insurance-industry" element={<InsuranceIndustry />} />
           <Route path="/insurance" element={<Insurance />} />

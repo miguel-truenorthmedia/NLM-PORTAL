@@ -1,9 +1,6 @@
-import axios from "axios";
+import api from "./authApi.js";
 
-const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api",
-});
-
+export { default } from "./authApi.js";
 export async function fetchFilterOptions() {
   const response = await api.get("/campaign/filters");
   return response.data;

@@ -9,6 +9,7 @@
     "sync:reconciliation": "node scripts/sync-reconciliation.mjs",
     "sync:all": "node scripts/sync-all.mjs",
     "test:mongo": "node scripts/test-mongo-connection.mjs",
+    "seed:admin": "node scripts/seed-admin.mjs",
     "sync:bigo-email": "node scripts/sync-bigo-email.mjs",
     "test:bigo-email-parser": "node scripts/test-bigo-email-parser.mjs"
   },
@@ -19,6 +20,8 @@
     "express": "^4.21.2",
     "googleapis": "^152.0.0",
     "mongoose": "^8.24.1",
-    "node-cron": "^3.0.3"
+    "node-cron": "^3.0.3",
+    "bcryptjs": "^3.0.2",
+    "jsonwebtoken": "^9.0.2"
   }
 }

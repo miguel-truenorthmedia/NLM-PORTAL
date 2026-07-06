@@ -90,6 +90,11 @@ Backend middleware filters all queries by the authenticated user's allowed IDs/n
 
 ## Current state
 
-- No authentication
-- All API routes are public
-- Suitable for local dev only — **add auth before giving media buyers production access**
+- JWT authentication implemented
+- Login page at **`https://www.northernleadsmedia.com/login`**
+- Unauthenticated `/admin` visits redirect to `/login`
+- Campaign, reconciliation, and sync APIs require auth
+- User management APIs for admins (`GET/POST/PATCH/DELETE /api/users`, `POST /api/auth/register`)
+- Media buyer data scoping — **not yet implemented** (next step)
+
+See [AUTH-API.md](./AUTH-API.md) for endpoint details.
