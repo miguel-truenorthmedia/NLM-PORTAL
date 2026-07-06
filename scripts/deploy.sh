@@ -22,9 +22,7 @@ npm run build
 
 echo "==> Building NLM portal ( /admin )..."
 cd ../frontend
-if [ ! -f .env.production ]; then
-  cp .env.production.example .env.production
-fi
+cp .env.production.example .env.production
 npm ci 2>/dev/null || npm install
 npm run build
 
