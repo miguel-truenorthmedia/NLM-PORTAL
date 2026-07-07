@@ -1,7 +1,7 @@
 import { CampaignDailyRow } from "../models/CampaignDailyRow.js";
 import { CachedMetadata } from "../models/CachedMetadata.js";
 import { hasRingbaConfig } from "../config.js";
-import { toLocalDateString } from "../utils/dateRange.js";
+import { getYesterdayDate, toLocalDateString } from "../utils/dateRange.js";
 import { listAdAccounts } from "./adAccountService.js";
 import { listCampaigns } from "./ringbaCampaignService.js";
 import { fetchDailyInsightsRollups } from "./ringbaInsightsService.js";
@@ -96,4 +96,10 @@ export async function syncCampaignData({ daysBack = 60, startDate, endDate } = {
     durationMs: Date.now() - startedAt,
     status: errors.length === 0 ? "success" : rowsWritten > 0 ? "partial" : "failed",
   };
+}
+
+/** Pull Ringba metrics for yesterday only — used by the 1 AM ET daily job. */
+export async function syncYesterdayCampaignData(referenceDate = new Date()) {
+  const yesterday = getYesterdayDate(referenceDate);
+  return syncCampaignData({ startDate: yesterday, endDate: yesterday });
 }

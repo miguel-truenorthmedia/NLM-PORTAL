@@ -5,6 +5,14 @@ export function toLocalDateString(date) {
   return `${year}-${month}-${day}`;
 }
 
+/** Yesterday in server local calendar (used when 1 AM ET cron runs). */
+export function getYesterdayDate(referenceDate = new Date()) {
+  const d = new Date(referenceDate);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - 1);
+  return toLocalDateString(d);
+}
+
 export function getLastWeekRange(referenceDate = new Date()) {
   const d = new Date(referenceDate);
   d.setHours(0, 0, 0, 0);

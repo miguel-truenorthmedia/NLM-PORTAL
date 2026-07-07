@@ -16,7 +16,7 @@ import { getFilterOptions } from "../services/campaignService.js";
 
 import { upsertAdSpend } from "../services/campaignSpendService.js";
 
-import { syncCampaignData } from "../services/campaignSyncService.js";
+import { syncCampaignData, syncYesterdayCampaignData } from "../services/campaignSyncService.js";
 
 import { listCampaigns, getCampaignDetail } from "../services/ringbaCampaignService.js";
 
@@ -114,6 +114,12 @@ router.post("/spend", async (req, res) => {
 
     });
 
+    if (hasMongoConfig) {
+      syncCampaignData({ startDate: date, endDate: date }).catch((error) => {
+        console.warn(`Ringba refresh after spend save failed for ${date}:`, error.message);
+      });
+    }
+
     return res.json({ ok: true, row });
 
   } catch (error) {
@@ -165,29 +171,31 @@ router.get("/daily", async (req, res) => {
 
 
 router.post("/sync", async (_req, res) => {
-
   if (!hasMongoConfig) {
-
     return res.status(400).json({ error: "MongoDB is disabled. Set USE_MONGODB=true and MONGODB_URI." });
-
   }
-
-
 
   try {
-
     const result = await syncCampaignData({ daysBack: 60 });
-
     return res.json(result);
-
   } catch (error) {
-
     console.error("Campaign sync failed:", error);
-
     return res.status(500).json({ error: error.message || "Failed to sync campaign data" });
+  }
+});
 
+router.post("/sync/yesterday", async (_req, res) => {
+  if (!hasMongoConfig) {
+    return res.status(400).json({ error: "MongoDB is disabled. Set USE_MONGODB=true and MONGODB_URI." });
   }
 
+  try {
+    const result = await syncYesterdayCampaignData();
+    return res.json(result);
+  } catch (error) {
+    console.error("Yesterday campaign sync failed:", error);
+    return res.status(500).json({ error: error.message || "Failed to sync yesterday's campaign data" });
+  }
 });
 
 

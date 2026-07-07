@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { syncCampaignData } from "../services/campaignSyncService.js";
+import { syncYesterdayCampaignData } from "../services/campaignSyncService.js";
 
 let isRunning = false;
 
@@ -10,12 +10,12 @@ async function runScheduledCampaignSync() {
   }
 
   isRunning = true;
-  console.log("Starting scheduled campaign sync...");
+  console.log("Starting scheduled campaign sync (yesterday from Ringba)...");
 
   try {
-    const result = await syncCampaignData({ daysBack: 60 });
+    const result = await syncYesterdayCampaignData();
     console.log(
-      `Campaign sync finished: ${result.status} (${result.rowsWritten} rows, ${result.durationMs}ms)`
+      `Campaign sync finished: ${result.status} (${result.startDate} — ${result.rowsWritten} rows, ${result.durationMs}ms)`
     );
     if (result.errors.length) {
       console.warn("Campaign sync errors:", result.errors);
@@ -29,14 +29,14 @@ async function runScheduledCampaignSync() {
 
 export function startCampaignSyncJob() {
   cron.schedule(
-    "0 2 * * *",
+    "0 1 * * *",
     () => {
       runScheduledCampaignSync();
     },
     { timezone: "America/New_York" }
   );
 
-  console.log("Campaign sync scheduled for daily 2:00 AM ET");
+  console.log("Campaign sync scheduled for daily 1:00 AM ET (yesterday's Ringba data)");
 }
 
 export { runScheduledCampaignSync as runCampaignSyncNow };

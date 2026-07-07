@@ -1,5 +1,6 @@
 import { CampaignDailyRow } from "../models/CampaignDailyRow.js";
 import { CachedMetadata } from "../models/CachedMetadata.js";
+import { filterEmptyCampaignRows } from "../utils/campaignRowUtils.js";
 import { getAdAccountsFiltered } from "./adAccountService.js";
 import {
   getSpendBreakdownForDate,
@@ -75,7 +76,7 @@ export async function getCampaignDailyFromStore(startDate, endDate, filters = {}
     CachedMetadata.findOne({ key: "campaign-filters" }).lean(),
   ]);
 
-  const rows = storedRows.map((row) => enrichRow(row, spendRows));
+  const rows = filterEmptyCampaignRows(storedRows.map((row) => enrichRow(row, spendRows)));
   const summary = buildSummary(rows);
 
   if (rows.length === 1) {

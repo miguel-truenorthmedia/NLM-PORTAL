@@ -1,5 +1,7 @@
 import { hasRingbaConfig } from "../config.js";
 
+import { filterEmptyCampaignRows } from "../utils/campaignRowUtils.js";
+
 import { getAdAccountById, getAdAccountsFiltered } from "./adAccountService.js";
 
 import {
@@ -374,6 +376,8 @@ export async function getCampaignDaily(startDate, endDate, filters = {}) {
 
   rows.sort((a, b) => a.date.localeCompare(b.date));
 
+  const visibleRows = filterEmptyCampaignRows(rows);
+
 
 
   let periodRollup = null;
@@ -406,7 +410,7 @@ export async function getCampaignDaily(startDate, endDate, filters = {}) {
 
 
 
-  const summary = buildSummary(rows);
+  const summary = buildSummary(visibleRows);
 
   if (periodRollup) {
 
@@ -426,7 +430,7 @@ export async function getCampaignDaily(startDate, endDate, filters = {}) {
 
     summary,
 
-    rows,
+    rows: visibleRows,
 
     filters: { offerType, campaignId, adAccountId },
 
