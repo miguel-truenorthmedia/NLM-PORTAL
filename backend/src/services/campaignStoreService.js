@@ -40,6 +40,42 @@ function enrichRow(row, spendRows) {
   };
 }
 
+function buildSpendOnlyRows(storedRows, spendRows, filters, adAccounts, startDate, endDate) {
+  const { offerType = "", campaignId = "", adAccountId = "" } = filters;
+  const existingKeys = new Set(storedRows.map((row) => `${row.date}|${row.adAccountId}`));
+  const accountMap = new Map(adAccounts.map((account) => [account.id, account]));
+  const synthetic = [];
+
+  for (const spend of spendRows) {
+    if (spend.date < startDate || spend.date > endDate) continue;
+
+    const key = `${spend.date}|${spend.adAccountId}`;
+    if (existingKeys.has(key)) continue;
+
+    const account = accountMap.get(spend.adAccountId);
+    if (!account) continue;
+    if (campaignId && account.campaignId !== campaignId) continue;
+    if (adAccountId && account.id !== adAccountId) continue;
+    if (offerType && account.offerType !== offerType) continue;
+
+    synthetic.push({
+      date: spend.date,
+      campaignId: account.campaignId,
+      adAccountId: account.id,
+      offerType: account.offerType,
+      campaign: spend.campaign || account.displayName,
+      adAccount: account.displayName,
+      calls: 0,
+      convertedCalls: 0,
+      convertedPercent: 0,
+      revenue: 0,
+    });
+    existingKeys.add(key);
+  }
+
+  return synthetic;
+}
+
 function buildSummary(rows) {
   const totalSpend = rows.reduce((sum, row) => sum + row.adSpend, 0);
   const totalRevenue = rows.reduce((sum, row) => sum + row.revenue, 0);
@@ -70,13 +106,24 @@ export async function getCampaignDailyFromStore(startDate, endDate, filters = {}
   if (adAccountId) query.adAccountId = adAccountId;
   if (offerType) query.offerType = offerType;
 
-  const [storedRows, spendRows, meta] = await Promise.all([
+  const [storedRows, spendRows, meta, adAccounts] = await Promise.all([
     CampaignDailyRow.find(query).sort({ date: 1 }).lean(),
     loadSpendRows(),
     CachedMetadata.findOne({ key: "campaign-filters" }).lean(),
+    getAdAccountsFiltered({ offerType, campaignId, adAccountId }),
   ]);
 
-  const rows = filterEmptyCampaignRows(storedRows.map((row) => enrichRow(row, spendRows)));
+  const spendOnlyRows = buildSpendOnlyRows(
+    storedRows,
+    spendRows,
+    { offerType, campaignId, adAccountId },
+    adAccounts,
+    startDate,
+    endDate
+  );
+  const allRows = [...storedRows, ...spendOnlyRows];
+
+  const rows = filterEmptyCampaignRows(allRows.map((row) => enrichRow(row, spendRows)));
   const summary = buildSummary(rows);
 
   if (rows.length === 1) {

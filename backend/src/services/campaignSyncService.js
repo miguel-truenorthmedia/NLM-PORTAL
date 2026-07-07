@@ -63,17 +63,21 @@ export async function syncCampaignData({ daysBack = 60, startDate, endDate } = {
             adAccountId: account.id,
           },
           {
-            date: day.date,
-            campaignId: account.campaignId,
-            adAccountId: account.id,
-            offerType: account.offerType,
-            campaign: campaignName,
-            adAccount: account.displayName,
-            calls: day.calls,
-            convertedCalls: day.convertedCalls,
-            convertedPercent: day.convertedPercent,
-            revenue: day.revenue,
-            syncedAt: new Date(),
+            $set: {
+              calls: day.calls,
+              convertedCalls: day.convertedCalls,
+              convertedPercent: day.convertedPercent,
+              revenue: day.revenue,
+              syncedAt: new Date(),
+              offerType: account.offerType,
+              campaign: campaignName,
+              adAccount: account.displayName,
+            },
+            $setOnInsert: {
+              date: day.date,
+              campaignId: account.campaignId,
+              adAccountId: account.id,
+            },
           },
           { upsert: true, new: true }
         );

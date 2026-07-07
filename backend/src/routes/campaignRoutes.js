@@ -115,7 +115,7 @@ router.post("/spend", async (req, res) => {
     });
 
     if (hasMongoConfig) {
-      syncCampaignData({ startDate: date, endDate: date }).catch((error) => {
+      syncYesterdayCampaignData().catch((error) => {
         console.warn(`Ringba refresh after spend save failed for ${date}:`, error.message);
       });
     }

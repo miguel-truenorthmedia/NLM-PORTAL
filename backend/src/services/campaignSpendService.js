@@ -1,14 +1,10 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { getAdAccountById } from "./adAccountService.js";
-import { getTrafficSourceById } from "./trafficSourceService.js";
 
-const DATA_DIR = path.resolve(process.cwd(), "data");
-const SPEND_PATH = path.join(DATA_DIR, "campaignDaily.json");
+import { hasMongoConfig } from "../config.js";
+import { CampaignSpendRow } from "../models/CampaignSpendRow.js";
 
-function round(value) {
-  return Number(value.toFixed(2));
-}
+const LEGACY_SPEND_PATH = path.resolve(process.cwd(), "data", "campaignDaily.json");
 
 function normalizeSpendRow(row) {
   const amount = Number(row.amount ?? row.bigoSpend ?? 0) || 0;
@@ -22,34 +18,76 @@ function normalizeSpendRow(row) {
   };
 }
 
+function round(value) {
+  return Number(value.toFixed(2));
+}
+
 function spendRowKey(row) {
   return `${row.date}|${row.adAccountId}|${row.trafficSourceId}`;
 }
 
-export async function loadSpendRows() {
+async function loadLegacySpendRows() {
   try {
-    const content = await readFile(SPEND_PATH, "utf8");
+    const content = await readFile(LEGACY_SPEND_PATH, "utf8");
     const parsed = JSON.parse(content);
     if (!Array.isArray(parsed)) return [];
     return parsed.map(normalizeSpendRow);
   } catch (error) {
     if (error?.code === "ENOENT") return [];
-    console.warn("Campaign spend read failed:", error.message);
+    console.warn("Legacy campaign spend read failed:", error.message);
     return [];
   }
 }
 
-async function writeSpendRows(rows) {
-  await mkdir(DATA_DIR, { recursive: true });
-  const payload = rows.map((row) => ({
-    date: row.date,
-    adAccountId: row.adAccountId,
-    trafficSourceId: row.trafficSourceId,
-    amount: row.amount,
-    campaign: row.campaign,
-    source: row.source || "manual",
-  }));
-  await writeFile(SPEND_PATH, JSON.stringify(payload, null, 2), "utf8");
+export async function migrateLegacySpendToMongo() {
+  if (!hasMongoConfig) return { migrated: 0 };
+
+  const legacyRows = await loadLegacySpendRows();
+  if (!legacyRows.length) return { migrated: 0 };
+
+  let migrated = 0;
+  for (const row of legacyRows) {
+    await CampaignSpendRow.findOneAndUpdate(
+      {
+        date: row.date,
+        adAccountId: row.adAccountId,
+        trafficSourceId: row.trafficSourceId,
+      },
+      {
+        $set: {
+          amount: row.amount,
+          campaign: row.campaign,
+          source: row.source,
+          updatedAt: new Date(),
+        },
+      },
+      { upsert: true }
+    );
+    migrated += 1;
+  }
+
+  if (migrated > 0) {
+    console.log(`Synced ${migrated} ad spend row(s) from campaignDaily.json into MongoDB`);
+  }
+  return { migrated };
+}
+
+export async function loadSpendRows() {
+  if (hasMongoConfig) {
+    const rows = await CampaignSpendRow.find().sort({ date: 1, adAccountId: 1 }).lean();
+    return rows.map((row) =>
+      normalizeSpendRow({
+        date: row.date,
+        adAccountId: row.adAccountId,
+        trafficSourceId: row.trafficSourceId,
+        amount: row.amount,
+        campaign: row.campaign,
+        source: row.source,
+      })
+    );
+  }
+
+  return loadLegacySpendRows();
 }
 
 export function getTotalSpendForDate(spendRows, date, adAccountId) {
@@ -68,7 +106,7 @@ export function getSpendBreakdownForDate(spendRows, date, adAccountId) {
   return breakdown;
 }
 
-async function resolveTrafficSourceId({ adAccount, trafficSourceId }) {
+async function resolveTrafficSourceId({ adAccount, trafficSourceId, getTrafficSourceById }) {
   const resolvedId = trafficSourceId || adAccount.trafficSourceId || "bigo";
   const trafficSource = await getTrafficSourceById(resolvedId);
   if (!trafficSource) {
@@ -78,6 +116,9 @@ async function resolveTrafficSourceId({ adAccount, trafficSourceId }) {
 }
 
 export async function upsertAdSpend({ date, adAccountId, amount, trafficSourceId, source = "manual" }) {
+  const { getAdAccountById } = await import("./adAccountService.js");
+  const { getTrafficSourceById } = await import("./trafficSourceService.js");
+
   if (!date || !adAccountId) {
     throw new Error("date and adAccountId are required");
   }
@@ -95,13 +136,13 @@ export async function upsertAdSpend({ date, adAccountId, amount, trafficSourceId
   const { trafficSourceId: resolvedSourceId, trafficSource } = await resolveTrafficSourceId({
     adAccount: account,
     trafficSourceId,
+    getTrafficSourceById,
   });
 
   if (source === "manual" && trafficSource.spendMethod === "api") {
     throw new Error(`${trafficSource.label} spend is synced via API, not manual entry`);
   }
 
-  const rows = await loadSpendRows();
   const nextRow = {
     date,
     adAccountId,
@@ -111,6 +152,27 @@ export async function upsertAdSpend({ date, adAccountId, amount, trafficSourceId
     source,
   };
 
+  if (hasMongoConfig) {
+    await CampaignSpendRow.findOneAndUpdate(
+      {
+        date: nextRow.date,
+        adAccountId: nextRow.adAccountId,
+        trafficSourceId: nextRow.trafficSourceId,
+      },
+      {
+        $set: {
+          amount: nextRow.amount,
+          campaign: nextRow.campaign,
+          source: nextRow.source,
+          updatedAt: new Date(),
+        },
+      },
+      { upsert: true }
+    );
+    return nextRow;
+  }
+
+  const rows = await loadLegacySpendRows();
   const index = rows.findIndex((row) => spendRowKey(row) === spendRowKey(nextRow));
   if (index >= 0) {
     rows[index] = { ...rows[index], ...nextRow };
@@ -118,14 +180,9 @@ export async function upsertAdSpend({ date, adAccountId, amount, trafficSourceId
     rows.push(nextRow);
   }
 
-  rows.sort(
-    (a, b) =>
-      a.date.localeCompare(b.date) ||
-      a.adAccountId.localeCompare(b.adAccountId) ||
-      a.trafficSourceId.localeCompare(b.trafficSourceId)
-  );
-  await writeSpendRows(rows);
-
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  await mkdir(path.dirname(LEGACY_SPEND_PATH), { recursive: true });
+  await writeFile(LEGACY_SPEND_PATH, JSON.stringify(rows, null, 2), "utf8");
   return nextRow;
 }
 

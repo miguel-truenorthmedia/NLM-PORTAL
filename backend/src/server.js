@@ -3,6 +3,7 @@ import express from "express";
 
 import { config, hasAuthConfig, hasMongoConfig } from "./config.js";
 import { connectMongo } from "./db/mongo.js";
+import { migrateLegacySpendToMongo } from "./services/campaignSpendService.js";
 import { requireAuth, requireAdmin } from "./middleware/authMiddleware.js";
 import { startCampaignSyncJob } from "./jobs/campaignSyncJob.js";
 import { startReconciliationSyncJob } from "./jobs/reconciliationSyncJob.js";
@@ -62,6 +63,7 @@ async function start() {
 
   if (hasMongoConfig) {
     await connectMongo();
+    await migrateLegacySpendToMongo();
     await ensureAdminUser();
     startReconciliationSyncJob();
     startCampaignSyncJob();
