@@ -5,12 +5,25 @@ export function toLocalDateString(date) {
   return `${year}-${month}-${day}`;
 }
 
-/** Yesterday in server local calendar (used when 1 AM ET cron runs). */
+const EASTERN_TIME_ZONE = "America/New_York";
+
+/** Calendar date string (YYYY-MM-DD) in Eastern time. */
+export function toEasternDateString(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: EASTERN_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+/** Yesterday in Eastern time — used by the 1 AM ET daily Ringba sync. */
 export function getYesterdayDate(referenceDate = new Date()) {
-  const d = new Date(referenceDate);
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() - 1);
-  return toLocalDateString(d);
+  const easternToday = toEasternDateString(referenceDate);
+  const [year, month, day] = easternToday.split("-").map(Number);
+  const easternDate = new Date(year, month - 1, day);
+  easternDate.setDate(easternDate.getDate() - 1);
+  return toLocalDateString(easternDate);
 }
 
 export function getLastWeekRange(referenceDate = new Date()) {

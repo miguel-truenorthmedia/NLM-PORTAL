@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import KpiCards from "../components/KpiCards.jsx";
 import CampaignTable from "../components/CampaignTable.jsx";
 import { fetchCampaignDaily, fetchFilterOptions, saveAdSpend } from "../services/api.js";
+import { getYesterdayDate } from "../utils/dateHelpers.js";
 
 const DEFAULT_START = "2026-06-28";
-const DEFAULT_END = "2026-07-03";
+const DEFAULT_END = getYesterdayDate();
 const DEFAULT_CAMPAIGN = "CAf073c253e2244171ac7c49a892f85299";
 const DEFAULT_AD_ACCOUNT = "franz-fe-1";
 

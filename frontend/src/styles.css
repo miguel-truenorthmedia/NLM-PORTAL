@@ -27,6 +27,12 @@
   --kpi-calls: #2563eb;
   --kpi-converted: #0891b2;
   --kpi-roi: #db2777;
+  --trend-positive: #16a34a;
+  --trend-negative: #dc2626;
+  --brand-primary: #55d6be;
+  --brand-primary-dark: #3db8a2;
+  --brand-primary-soft: color-mix(in srgb, #55d6be 14%, transparent);
+  --brand-on-primary: #052e26;
 }
 
 [data-theme="dark"] {
@@ -57,6 +63,12 @@
   --kpi-calls: #60a5fa;
   --kpi-converted: #22d3ee;
   --kpi-roi: #f472b6;
+  --trend-positive: #34d399;
+  --trend-negative: #f87171;
+  --brand-primary: #55d6be;
+  --brand-primary-dark: #6ee7cc;
+  --brand-primary-soft: color-mix(in srgb, #55d6be 18%, transparent);
+  --brand-on-primary: #042f28;
 }
 
 :root {
@@ -87,47 +99,79 @@ body {
   align-items: center;
   gap: 1rem;
   padding: 0.75rem 1.5rem;
-  background: linear-gradient(90deg, var(--surface) 0%, color-mix(in srgb, var(--accent) 8%, var(--surface)) 100%);
-  border-bottom: 1px solid var(--border);
+  background: linear-gradient(90deg, var(--surface) 0%, color-mix(in srgb, var(--brand-primary) 10%, var(--surface)) 100%);
+  border-bottom: 1px solid color-mix(in srgb, var(--brand-primary) 25%, var(--border));
   box-shadow: var(--shadow);
 }
 
-.brand {
+.topbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.topbar-right {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
   text-decoration: none;
   color: var(--text);
 }
 
 .brand-logo {
-  height: 48px;
+  height: 40px;
   width: auto;
   object-fit: contain;
+  display: block;
 }
 
-.topbar-actions {
-  display: flex;
+.nav-link {
+  display: inline-flex;
   align-items: center;
-  gap: 1rem;
-}
-
-.topbar nav {
-  display: flex;
-  gap: 1rem;
-}
-
-.topbar a {
+  justify-content: center;
+  min-height: 2.25rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  box-sizing: border-box;
   text-decoration: none;
-  color: var(--link);
+  color: var(--brand-primary-dark);
   font-weight: 600;
-  padding: 0.35rem 0.5rem;
-  border-radius: 6px;
-  transition: background 0.15s ease, color 0.15s ease;
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 45%, transparent);
+  background: var(--brand-primary-soft);
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.topbar a:hover {
-  background: var(--accent-soft);
+.nav-link:hover {
+  color: var(--brand-on-primary);
+  background: color-mix(in srgb, var(--brand-primary) 78%, transparent);
+  border-color: var(--brand-primary);
+}
+
+.nav-link--active {
+  color: var(--brand-on-primary);
+  background: linear-gradient(135deg, var(--brand-primary) 0%, color-mix(in srgb, var(--brand-primary) 70%, #2dd4bf) 100%);
+  border-color: var(--brand-primary);
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--brand-primary) 35%, transparent);
+}
+
+.topbar a.brand {
+  text-decoration: none;
+  color: var(--text);
+}
+
+.topbar a:not(.brand) {
+  text-decoration: none;
 }
 
 .theme-toggle {
@@ -139,6 +183,11 @@ body {
   cursor: pointer;
   font-size: 1.1rem;
   line-height: 1;
+  min-height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
 }
 
 .theme-toggle:hover {
@@ -209,7 +258,12 @@ body {
 }
 
 .btn-secondary {
-  background: linear-gradient(135deg, var(--chart-profit) 0%, var(--accent) 100%);
+  background: linear-gradient(135deg, var(--brand-primary) 0%, color-mix(in srgb, var(--brand-primary) 75%, #2dd4bf) 100%);
+  color: var(--brand-on-primary);
+}
+
+.btn-secondary:hover {
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--brand-primary) 40%, transparent);
 }
 
 .btn-inline {
@@ -223,6 +277,115 @@ body {
 
 .subtle {
   color: var(--text-muted);
+}
+
+.page-header h2 {
+  margin: 0 0 0.35rem;
+}
+
+.page-header .subtle {
+  margin: 0 0 1rem;
+}
+
+.accounting-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.accounting-tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  padding: 0.45rem 0.95rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  text-decoration: none;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: transparent;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.accounting-tab:hover {
+  color: var(--brand-on-primary);
+  background: var(--brand-primary-soft);
+  border-color: color-mix(in srgb, var(--brand-primary) 35%, transparent);
+}
+
+.accounting-tab--active {
+  color: var(--brand-on-primary);
+  background: linear-gradient(135deg, var(--brand-primary) 0%, color-mix(in srgb, var(--brand-primary) 70%, #2dd4bf) 100%);
+  border-color: var(--brand-primary);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--brand-primary) 30%, transparent);
+}
+
+.accounting-tab-panel > div > h3 {
+  margin-top: 0;
+}
+
+.table-input {
+  width: 100%;
+  min-width: 8rem;
+  border: 1px solid var(--border-input);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 0.4rem 0.55rem;
+  font: inherit;
+}
+
+.table-input--narrow {
+  min-width: 4.5rem;
+  width: 5.5rem;
+}
+
+.net-field {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.checkbox-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.invoice-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.invoice-status--paid {
+  color: var(--trend-positive);
+  background: color-mix(in srgb, var(--trend-positive) 16%, transparent);
+}
+
+.invoice-status--open {
+  color: var(--text-muted);
+  background: var(--surface-muted);
+}
+
+.invoice-status--partial {
+  color: #ca8a04;
+  background: color-mix(in srgb, #ca8a04 16%, transparent);
+}
+
+.invoice-status--overdue {
+  color: var(--trend-negative);
+  background: color-mix(in srgb, var(--trend-negative) 16%, transparent);
 }
 
 .section-head {
@@ -525,6 +688,28 @@ th {
   color: var(--accent);
 }
 
+.trend-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.trend-arrow {
+  width: 0;
+  height: 0;
+  flex-shrink: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+}
+
+.trend-arrow--up {
+  border-bottom: 8px solid var(--trend-positive);
+}
+
+.trend-arrow--down {
+  border-top: 8px solid var(--trend-negative);
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -565,6 +750,45 @@ th {
   padding: 0.55rem 0.6rem;
   background: var(--surface);
   color: var(--text);
+}
+
+.buyer-form {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.buyer-form label {
+  display: grid;
+  gap: 0.4rem;
+  font-weight: 600;
+}
+
+.buyer-form input,
+.buyer-form select {
+  border: 1px solid var(--border-input);
+  border-radius: 8px;
+  padding: 0.55rem 0.6rem;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.btn-danger {
+  background: color-mix(in srgb, var(--trend-negative) 18%, var(--surface));
+  color: var(--trend-negative);
+  border: 1px solid color-mix(in srgb, var(--trend-negative) 40%, transparent);
+}
+
+.btn-danger:hover {
+  background: color-mix(in srgb, var(--trend-negative) 28%, var(--surface));
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--trend-negative) 25%, transparent);
 }
 
 .modal-actions {
@@ -654,7 +878,21 @@ th {
 
 .user-label {
   font-size: 0.9rem;
+  font-weight: 600;
   color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.topbar .btn {
+  margin-top: 0;
+}
+
+.btn-topbar {
+  min-height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
 }
 
 .btn-small {
@@ -665,12 +903,19 @@ th {
 @media (max-width: 768px) {
   .topbar {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
+    gap: 0.75rem;
   }
 
-  .topbar-actions {
+  .topbar-nav {
     width: 100%;
-    justify-content: space-between;
+    justify-content: flex-start;
+  }
+
+  .topbar-right {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-end;
     flex-wrap: wrap;
   }
 }

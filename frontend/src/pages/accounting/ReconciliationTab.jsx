@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchReconciliation, fetchReconciliationBuyers, fetchReconciliationFilters } from "../services/api.js";
-import { formatCurrency, formatDateRange } from "../components/formatters.js";
-import { downloadSoldCallsCsv } from "../utils/csvExport.js";
+import { fetchReconciliation, fetchReconciliationBuyers, fetchReconciliationFilters } from "../../services/api.js";
+import { formatCurrency, formatDateRange } from "../../components/formatters.js";
+import { downloadSoldCallsCsv } from "../../utils/csvExport.js";
 
 function FilterChip({ label, value }) {
   return (
@@ -11,7 +11,7 @@ function FilterChip({ label, value }) {
   );
 }
 
-export default function ReconciliationPage() {
+export default function ReconciliationTab() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [campaignName, setCampaignName] = useState("");
@@ -89,8 +89,8 @@ export default function ReconciliationPage() {
   };
 
   return (
-    <section>
-      <h2>Reconciliation</h2>
+    <div>
+      <h3>Reconciliation</h3>
       <p className="subtle">
         {dataSource === "mongodb"
           ? `Review sold calls by campaign and buyer for the selected week. Data syncs from Ringba every Monday at 1:00 AM ET.${
@@ -102,7 +102,10 @@ export default function ReconciliationPage() {
       </p>
 
       {dataSource === "mongodb" && !loading && campaigns.length === 0 ? (
-        <p className="subtle">No synced reconciliation data for this week yet. Run the backend sync job or wait for Monday&apos;s scheduled sync.</p>
+        <p className="subtle">
+          No synced reconciliation data for this week yet. Run the backend sync job or wait for Monday&apos;s scheduled
+          sync.
+        </p>
       ) : null}
 
       <div className="card filter-panel">
@@ -226,6 +229,6 @@ export default function ReconciliationPage() {
           </table>
         </div>
       </div>
-    </section>
+    </div>
   );
 }

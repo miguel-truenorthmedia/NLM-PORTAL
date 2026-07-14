@@ -64,3 +64,31 @@ export async function fetchReconciliation({ campaignName, buyerName, startDate, 
   });
   return response.data;
 }
+
+export async function fetchBuyers() {
+  const response = await api.get("/buyers");
+  return response.data;
+}
+
+export async function createBuyer(payload) {
+  const response = await api.post("/buyers", payload);
+  return response.data;
+}
+
+export async function updateBuyer(id, payload) {
+  const response = await api.put(`/buyers/${id}`, payload);
+  return response.data;
+}
+
+export async function deleteBuyer(id) {
+  const response = await api.delete(`/buyers/${id}`);
+  return response.data;
+}
+
+/** @deprecated Use createBuyer / updateBuyer */
+export async function saveBuyer(payload) {
+  if (payload?.id) {
+    return updateBuyer(payload.id, payload);
+  }
+  return createBuyer(payload);
+}

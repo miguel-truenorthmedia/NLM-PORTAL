@@ -29,6 +29,30 @@ function SortArrow({ direction }) {
   return null;
 }
 
+function TrendArrow({ value }) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num === 0) return null;
+
+  const direction = num > 0 ? "up" : "down";
+  return <span className={`trend-arrow trend-arrow--${direction}`} aria-hidden="true" />;
+}
+
+function renderCell(row, col) {
+  const value = row[col.key];
+  const formatted = formatValue(value, col.type);
+
+  if (col.key === "profit" || col.key === "roi") {
+    return (
+      <span className="trend-indicator">
+        <TrendArrow value={value} />
+        <span>{formatted}</span>
+      </span>
+    );
+  }
+
+  return formatted;
+}
+
 export default function CampaignTable({ rows }) {
   const [sortKey, setSortKey] = useState("date");
   const [direction, setDirection] = useState("desc");
@@ -87,7 +111,7 @@ export default function CampaignTable({ rows }) {
               sortedRows.map((row) => (
                 <tr key={`${row.date}-${row.adAccount}`}>
                   {columns.map((col) => (
-                    <td key={col.key}>{formatValue(row[col.key], col.type)}</td>
+                    <td key={col.key}>{renderCell(row, col)}</td>
                   ))}
                 </tr>
               ))

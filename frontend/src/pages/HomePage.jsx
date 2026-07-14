@@ -101,12 +101,12 @@ export default function HomePage() {
           </Link>
         </div>
         <div className="card home-card home-card-recon">
-          <h3>Reconciliation</h3>
+          <h3>Accounting</h3>
           <p className="subtle">
-            Review sold calls by campaign and buyer. Download weekly CSV reports for media buyers.
+            Reconciliation, buyer billing profiles, and invoices. Download weekly CSV reports and manage Net terms.
           </p>
-          <Link className="btn btn-inline btn-secondary" to="/reconciliation">
-            Open Reconciliation
+          <Link className="btn btn-inline btn-secondary" to="/accounting">
+            Open Accounting
           </Link>
         </div>
       </div>

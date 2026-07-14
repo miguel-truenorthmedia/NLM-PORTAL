@@ -8,6 +8,7 @@ import { requireAuth, requireAdmin } from "./middleware/authMiddleware.js";
 import { startCampaignSyncJob } from "./jobs/campaignSyncJob.js";
 import { startReconciliationSyncJob } from "./jobs/reconciliationSyncJob.js";
 import authRoutes from "./routes/authRoutes.js";
+import buyerRoutes from "./routes/buyerRoutes.js";
 import campaignRoutes from "./routes/campaignRoutes.js";
 import reconciliationRoutes from "./routes/reconciliationRoutes.js";
 import syncRoutes from "./routes/syncRoutes.js";
@@ -34,6 +35,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/campaign", requireAuth, campaignRoutes);
 app.use("/api/reconciliation", requireAuth, reconciliationRoutes);
+app.use("/api/buyers", requireAuth, buyerRoutes);
 app.use("/api/sync", requireAuth, requireAdmin, syncRoutes);
 
 async function ensureAdminUser() {

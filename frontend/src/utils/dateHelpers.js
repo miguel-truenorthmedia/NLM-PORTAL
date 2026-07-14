@@ -5,6 +5,13 @@ export function toLocalDateString(date) {
   return `${year}-${month}-${day}`;
 }
 
+export function getYesterdayDate(referenceDate = new Date()) {
+  const d = new Date(referenceDate);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - 1);
+  return toLocalDateString(d);
+}
+
 export function getLast7DaysRange(referenceDate = new Date()) {
   const end = new Date(referenceDate);
   end.setHours(0, 0, 0, 0);
