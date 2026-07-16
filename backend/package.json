@@ -7,6 +7,7 @@
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "sync:reconciliation": "node scripts/sync-reconciliation.mjs",
+    "sync:reconciliation:history": "node scripts/sync-reconciliation-history.mjs",
     "sync:campaign:yesterday": "node scripts/sync-campaign-yesterday.mjs",
     "spend:upsert": "node scripts/upsert-spend.mjs",
     "sync:all": "node scripts/sync-all.mjs",

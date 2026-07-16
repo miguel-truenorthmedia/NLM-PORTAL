@@ -109,6 +109,7 @@ export async function getReconciliationFilters(startDate, endDate) {
   return {
     campaigns,
     buyers,
+    weeks: await listSyncedWeeks(),
     defaultRange,
     defaultCampaign: feCampaign,
     defaultBuyer: buyers.find((b) => b.name === "Elijay Marketing") || buyers[0] || null,

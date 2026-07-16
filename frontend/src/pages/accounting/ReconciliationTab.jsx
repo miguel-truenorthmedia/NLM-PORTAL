@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchReconciliation, fetchReconciliationBuyers, fetchReconciliationFilters } from "../../services/api.js";
+import {
+  fetchReconciliation,
+  fetchReconciliationBuyers,
+  fetchReconciliationFilters,
+  fetchSyncedWeeks,
+} from "../../services/api.js";
 import { formatCurrency, formatDateRange } from "../../components/formatters.js";
 import { downloadSoldCallsCsv } from "../../utils/csvExport.js";
 
@@ -11,6 +16,10 @@ function FilterChip({ label, value }) {
   );
 }
 
+function weekKey(week) {
+  return `${week.startDate}|${week.endDate}`;
+}
+
 export default function ReconciliationTab() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -18,14 +27,19 @@ export default function ReconciliationTab() {
   const [buyerName, setBuyerName] = useState("");
   const [campaigns, setCampaigns] = useState([]);
   const [buyers, setBuyers] = useState([]);
+  const [weeks, setWeeks] = useState([]);
   const [data, setData] = useState({ summary: {}, calls: [] });
   const [loading, setLoading] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [dataSource, setDataSource] = useState("ringba");
 
+  const selectedWeekKey = startDate && endDate ? `${startDate}|${endDate}` : "";
+
   useEffect(() => {
-    fetchReconciliationFilters()
-      .then((filters) => {
+    Promise.all([fetchReconciliationFilters(), fetchSyncedWeeks().catch(() => ({ weeks: [] }))])
+      .then(([filters, weeksPayload]) => {
+        const syncedWeeks = weeksPayload.weeks || filters.weeks || [];
+        setWeeks(syncedWeeks);
         setCampaigns(filters.campaigns || []);
         setStartDate(filters.defaultRange?.startDate || "");
         setEndDate(filters.defaultRange?.endDate || "");
@@ -37,6 +51,22 @@ export default function ReconciliationTab() {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!startDate || !endDate) return;
+    fetchReconciliationFilters(startDate, endDate)
+      .then((filters) => {
+        setCampaigns(filters.campaigns || []);
+        setLastSyncedAt(filters.lastSyncedAt || null);
+        setCampaignName((prev) => {
+          if (filters.campaigns?.length && !filters.campaigns.some((c) => c.name === prev)) {
+            return filters.defaultCampaign?.name || filters.campaigns[0].name;
+          }
+          return prev;
+        });
+      })
+      .catch(() => {});
+  }, [startDate, endDate]);
 
   useEffect(() => {
     if (!campaignName || !startDate || !endDate) return;
@@ -78,6 +108,13 @@ export default function ReconciliationTab() {
     [summary, campaignName, buyerName]
   );
 
+  const handleWeekChange = (value) => {
+    if (!value) return;
+    const [nextStart, nextEnd] = value.split("|");
+    setStartDate(nextStart);
+    setEndDate(nextEnd);
+  };
+
   const handleDownload = () => {
     if (!buyerName || !(data.calls || []).length) return;
     downloadSoldCallsCsv({
@@ -93,7 +130,7 @@ export default function ReconciliationTab() {
       <h3>Reconciliation</h3>
       <p className="subtle">
         {dataSource === "mongodb"
-          ? `Review sold calls by campaign and buyer for the selected week. Data syncs from Ringba every Monday at 1:00 AM ET.${
+          ? `Review sold calls by campaign and buyer. Weekly snapshots are kept in MongoDB for monthly invoicing (last 8 weeks refreshed every Monday 1:00 AM ET).${
               lastSyncedAt
                 ? ` Last synced ${new Date(lastSyncedAt).toLocaleString("en-US", { timeZone: "America/New_York" })} ET.`
                 : ""
@@ -103,13 +140,28 @@ export default function ReconciliationTab() {
 
       {dataSource === "mongodb" && !loading && campaigns.length === 0 ? (
         <p className="subtle">
-          No synced reconciliation data for this week yet. Run the backend sync job or wait for Monday&apos;s scheduled
-          sync.
+          No synced reconciliation data for this week yet. Run{" "}
+          <code>npm run sync:reconciliation:history</code> or wait for Monday&apos;s scheduled sync.
         </p>
       ) : null}
 
       <div className="card filter-panel">
         <div className="filter-grid">
+          {weeks.length > 0 ? (
+            <label>
+              Week
+              <select value={selectedWeekKey} onChange={(e) => handleWeekChange(e.target.value)}>
+                {weeks.map((week) => (
+                  <option key={weekKey(week)} value={weekKey(week)}>
+                    {formatDateRange(week.startDate, week.endDate)}
+                  </option>
+                ))}
+                {selectedWeekKey && !weeks.some((week) => weekKey(week) === selectedWeekKey) ? (
+                  <option value={selectedWeekKey}>{formatDateRange(startDate, endDate)} (custom)</option>
+                ) : null}
+              </select>
+            </label>
+          ) : null}
           <label>
             Campaign
             <select value={campaignName} onChange={(e) => setCampaignName(e.target.value)}>

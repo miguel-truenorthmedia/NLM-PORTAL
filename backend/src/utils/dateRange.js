@@ -43,6 +43,15 @@ export function getLastWeekRange(referenceDate = new Date()) {
   };
 }
 
+/** Business week N weeks before the most recent completed week (0 = last week). */
+export function getWeekRangeWeeksAgo(weeksAgo = 0, referenceDate = new Date()) {
+  const offset = Math.max(0, Number(weeksAgo) || 0);
+  const reference = new Date(referenceDate);
+  reference.setHours(0, 0, 0, 0);
+  reference.setDate(reference.getDate() - offset * 7);
+  return getLastWeekRange(reference);
+}
+
 export function buildReportWindow(startDate, endDate) {
   const [endYear, endMonth, endDay] = endDate.split("-").map(Number);
   const nextEnd = new Date(endYear, endMonth - 1, endDay + 1);

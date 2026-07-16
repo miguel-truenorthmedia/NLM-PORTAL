@@ -1,7 +1,7 @@
 import { ReconciliationRun } from "../models/ReconciliationRun.js";
 import { ReconciliationSnapshot } from "../models/ReconciliationSnapshot.js";
 import { hasRingbaConfig } from "../config.js";
-import { getLastWeekRange } from "../utils/dateRange.js";
+import { getLastWeekRange, getWeekRangeWeeksAgo } from "../utils/dateRange.js";
 import { listCampaigns } from "./ringbaCampaignService.js";
 import {
   getBuyersForCampaign as fetchBuyersFromRingba,
@@ -50,6 +50,7 @@ export async function syncReconciliationWeek({ startDate, endDate } = getLastWee
           endDate,
         });
 
+        // Upsert only — never deletes prior weeks.
         await ReconciliationSnapshot.findOneAndUpdate(
           {
             startDate,
@@ -109,4 +110,36 @@ export async function syncReconciliationWeek({ startDate, endDate } = getLastWee
 export async function syncLastWeekReconciliation(referenceDate = new Date()) {
   const { startDate, endDate } = getLastWeekRange(referenceDate);
   return syncReconciliationWeek({ startDate, endDate });
+}
+
+/**
+ * Sync multiple past business weeks into MongoDB.
+ * Existing weeks are updated in place — older weeks are never deleted.
+ */
+export async function syncReconciliationHistory(weekCount = 8, referenceDate = new Date()) {
+  const count = Math.max(1, Math.min(Number(weekCount) || 8, 26));
+  const results = [];
+
+  for (let weeksAgo = 0; weeksAgo < count; weeksAgo += 1) {
+    const { startDate, endDate } = getWeekRangeWeeksAgo(weeksAgo, referenceDate);
+    console.log(`Syncing reconciliation week ${weeksAgo + 1}/${count}: ${startDate} → ${endDate}`);
+    results.push(await syncReconciliationWeek({ startDate, endDate }));
+  }
+
+  return {
+    weekCount: count,
+    weeks: results.map((result) => ({
+      startDate: result.startDate,
+      endDate: result.endDate,
+      status: result.status,
+      snapshotsWritten: result.snapshotsWritten,
+      errors: result.errors.length,
+    })),
+    snapshotsWritten: results.reduce((sum, result) => sum + result.snapshotsWritten, 0),
+    status: results.every((result) => result.status === "success")
+      ? "success"
+      : results.some((result) => result.snapshotsWritten > 0)
+        ? "partial"
+        : "failed",
+  };
 }

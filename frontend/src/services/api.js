@@ -51,6 +51,16 @@ export async function fetchReconciliationFilters(startDate, endDate) {
   return response.data;
 }
 
+export async function fetchSyncedWeeks() {
+  const response = await api.get("/reconciliation/weeks");
+  return response.data;
+}
+
+export async function syncReconciliationHistory(weeksBack = 8) {
+  const response = await api.post("/reconciliation/sync", { weeksBack });
+  return response.data;
+}
+
 export async function fetchReconciliationBuyers(campaignName, startDate, endDate) {
   const response = await api.get("/reconciliation/buyers", {
     params: { campaignName, startDate, endDate },
