@@ -40,14 +40,19 @@ export default function ReconciliationTab() {
       .then(([filters, weeksPayload]) => {
         const syncedWeeks = weeksPayload.weeks || filters.weeks || [];
         setWeeks(syncedWeeks);
+        setDataSource(filters.dataSource || "ringba");
+
+        const initialRange = syncedWeeks[0]
+          ? { startDate: syncedWeeks[0].startDate, endDate: syncedWeeks[0].endDate }
+          : filters.defaultRange;
+
+        setStartDate(initialRange?.startDate || "");
+        setEndDate(initialRange?.endDate || "");
         setCampaigns(filters.campaigns || []);
-        setStartDate(filters.defaultRange?.startDate || "");
-        setEndDate(filters.defaultRange?.endDate || "");
         setCampaignName(filters.defaultCampaign?.name || "");
         setBuyerName(filters.defaultBuyer?.name || "");
         setBuyers(filters.buyers || []);
         setLastSyncedAt(filters.lastSyncedAt || null);
-        setDataSource(filters.dataSource || "ringba");
       })
       .catch(() => {});
   }, []);
@@ -138,10 +143,16 @@ export default function ReconciliationTab() {
           : "Review sold calls by campaign and buyer for the selected week. Data loads live from Ringba."}
       </p>
 
-      {dataSource === "mongodb" && !loading && campaigns.length === 0 ? (
+      {dataSource === "mongodb" && !loading && weeks.length === 0 ? (
         <p className="subtle">
-          No synced reconciliation data for this week yet. Run{" "}
-          <code>npm run sync:reconciliation:history</code> or wait for Monday&apos;s scheduled sync.
+          No synced reconciliation weeks yet. Run <code>npm run sync:reconciliation:history</code> or wait for
+          Monday&apos;s scheduled sync.
+        </p>
+      ) : null}
+
+      {dataSource === "mongodb" && !loading && weeks.length > 0 && campaigns.length === 0 ? (
+        <p className="subtle">
+          No campaign data found for {formatDateRange(startDate, endDate)}. Pick a week from the dropdown.
         </p>
       ) : null}
 
