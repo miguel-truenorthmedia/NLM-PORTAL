@@ -1,5 +1,5 @@
 import { ReconciliationSnapshot } from "../models/ReconciliationSnapshot.js";
-import { getLastWeekRange } from "../utils/dateRange.js";
+import { getLastWeekRange, toEasternDateString } from "../utils/dateRange.js";
 
 function inferOfferType(name = "") {
   const lower = name.toLowerCase();
@@ -44,7 +44,33 @@ function overlapQuery({ campaignName, buyerName, startDate, endDate }) {
   return query;
 }
 
-function aggregateSnapshots(snapshots, { campaignName, buyerName }) {
+/** Calendar date (YYYY-MM-DD) of a call in Eastern time. */
+function getCallEasternDate(call) {
+  const raw = call?.callDtRaw;
+  if (raw == null || raw === "") return null;
+
+  const ms = typeof raw === "number" ? raw : Number(raw);
+  if (Number.isFinite(ms) && ms > 0) {
+    return toEasternDateString(new Date(ms));
+  }
+
+  // Fallback: parse display string like "7/15/2026, 3:04 PM"
+  const parsed = new Date(call.callDt);
+  if (!Number.isNaN(parsed.getTime())) {
+    return toEasternDateString(parsed);
+  }
+
+  return null;
+}
+
+function callInDateRange(call, startDate, endDate) {
+  const day = getCallEasternDate(call);
+  if (!day) return false;
+  return day >= startDate && day <= endDate;
+}
+
+/** Build summary + call list from sold calls filtered to the date picker range. */
+function aggregateCallsInRange(snapshots, { campaignName, buyerName, startDate, endDate }) {
   if (!snapshots.length) {
     return {
       summary: emptySummary(campaignName, buyerName),
@@ -55,30 +81,28 @@ function aggregateSnapshots(snapshots, { campaignName, buyerName }) {
     };
   }
 
-  let calls = 0;
-  let convertedCalls = 0;
-  let revenue = 0;
-  let payout = 0;
-  let profit = 0;
-  let totalCallLogs = 0;
   let syncedAt = null;
   const soldCalls = [];
 
   for (const snapshot of snapshots) {
-    const summary = snapshot.summary || {};
-    calls += Number(summary.calls) || 0;
-    convertedCalls += Number(summary.convertedCalls) || 0;
-    revenue += Number(summary.revenue) || 0;
-    payout += Number(summary.payout) || 0;
-    profit += Number(summary.profit) || 0;
-    totalCallLogs += Number(snapshot.totalCallLogs) || 0;
-    soldCalls.push(...(snapshot.calls || []));
+    for (const call of snapshot.calls || []) {
+      if (callInDateRange(call, startDate, endDate)) {
+        soldCalls.push(call);
+      }
+    }
     if (!syncedAt || (snapshot.syncedAt && snapshot.syncedAt > syncedAt)) {
       syncedAt = snapshot.syncedAt;
     }
   }
 
   soldCalls.sort((a, b) => String(b.callDtRaw || "").localeCompare(String(a.callDtRaw || "")));
+
+  const revenue = soldCalls.reduce((sum, call) => sum + (Number(call.conversionAmount) || 0), 0);
+  const payout = soldCalls.reduce((sum, call) => sum + (Number(call.payoutAmount) || 0), 0);
+  const convertedCalls = soldCalls.length;
+  // Sold-call store only keeps converted rows; Inc mirrors converted for date-filtered views.
+  const calls = convertedCalls;
+  const profit = revenue - payout;
 
   return {
     summary: {
@@ -93,52 +117,45 @@ function aggregateSnapshots(snapshots, { campaignName, buyerName }) {
       convertedPercent: round(safeDivide(convertedCalls, calls) * 100),
     },
     calls: soldCalls,
-    totalCallLogs,
+    totalCallLogs: soldCalls.length,
     soldCallCount: soldCalls.length,
     syncedAt,
   };
 }
 
 export async function getReconciliationData({ campaignName, buyerName, startDate, endDate }) {
-  // Prefer exact week match, then fall back to overlapping weeks (multi-week ranges).
-  const exactQuery = { startDate, endDate, campaignName };
-  if (buyerName) exactQuery.buyerName = buyerName;
+  // Always load overlapping weekly snapshots, then filter calls to the date picker.
+  const snapshots = await ReconciliationSnapshot.find(
+    overlapQuery({ campaignName, buyerName, startDate, endDate })
+  )
+    .sort({ startDate: 1 })
+    .lean();
 
-  let snapshots = await ReconciliationSnapshot.find(exactQuery).lean();
-  if (!snapshots.length) {
-    snapshots = await ReconciliationSnapshot.find(
-      overlapQuery({ campaignName, buyerName, startDate, endDate })
-    )
-      .sort({ startDate: 1 })
-      .lean();
-  }
-
-  const aggregated = aggregateSnapshots(snapshots, { campaignName, buyerName });
   return {
     dateRange: { startDate, endDate },
-    ...aggregated,
+    ...aggregateCallsInRange(snapshots, { campaignName, buyerName, startDate, endDate }),
   };
 }
 
 export async function getBuyersForCampaign(campaignName, startDate, endDate) {
-  let snapshots = await ReconciliationSnapshot.find({ startDate, endDate, campaignName })
-    .select("buyerName summary.calls")
+  const snapshots = await ReconciliationSnapshot.find(
+    overlapQuery({ campaignName, startDate, endDate })
+  )
+    .select("buyerName calls summary.calls")
     .lean();
-
-  if (!snapshots.length) {
-    snapshots = await ReconciliationSnapshot.find(
-      overlapQuery({ campaignName, startDate, endDate })
-    )
-      .select("buyerName summary.calls")
-      .lean();
-  }
 
   const buyerMap = new Map();
   for (const snapshot of snapshots) {
     const name = snapshot.buyerName;
     if (!name) continue;
+
+    const callsInRange = (snapshot.calls || []).filter((call) =>
+      callInDateRange(call, startDate, endDate)
+    );
+    if (!callsInRange.length && !(Number(snapshot.summary?.calls) > 0)) continue;
+
     const existing = buyerMap.get(name) || { name, callCount: 0 };
-    existing.callCount += Number(snapshot.summary?.calls) || 0;
+    existing.callCount += callsInRange.length || Number(snapshot.summary?.calls) || 0;
     buyerMap.set(name, existing);
   }
 
@@ -153,17 +170,10 @@ export async function getReconciliationFilters(startDate, endDate) {
     endDate: endDate || weeks[0]?.endDate || defaultRange.endDate,
   };
 
-  let snapshots = await ReconciliationSnapshot.find({
-    startDate: range.startDate,
-    endDate: range.endDate,
+  const snapshots = await ReconciliationSnapshot.find({
+    startDate: { $lte: range.endDate },
+    endDate: { $gte: range.startDate },
   }).lean();
-
-  if (!snapshots.length) {
-    snapshots = await ReconciliationSnapshot.find({
-      startDate: { $lte: range.endDate },
-      endDate: { $gte: range.startDate },
-    }).lean();
-  }
 
   const campaignMap = new Map();
   const buyerMap = new Map();
@@ -180,8 +190,11 @@ export async function getReconciliationFilters(startDate, endDate) {
     }
 
     const buyerKey = snapshot.buyerName;
+    const callsInRange = (snapshot.calls || []).filter((call) =>
+      callInDateRange(call, range.startDate, range.endDate)
+    );
     const existingBuyer = buyerMap.get(buyerKey) || { name: buyerKey, callCount: 0 };
-    existingBuyer.callCount += Number(snapshot.summary?.calls) || 0;
+    existingBuyer.callCount += callsInRange.length || Number(snapshot.summary?.calls) || 0;
     buyerMap.set(buyerKey, existingBuyer);
 
     if (!lastSyncedAt || snapshot.syncedAt > lastSyncedAt) {

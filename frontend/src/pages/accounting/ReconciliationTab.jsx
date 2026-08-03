@@ -3,7 +3,6 @@ import {
   fetchReconciliation,
   fetchReconciliationBuyers,
   fetchReconciliationFilters,
-  fetchSyncedWeeks,
 } from "../../services/api.js";
 import { formatCurrency, formatDateRange } from "../../components/formatters.js";
 import { downloadSoldCallsCsv } from "../../utils/csvExport.js";
@@ -16,8 +15,15 @@ function FilterChip({ label, value }) {
   );
 }
 
-function weekKey(week) {
-  return `${week.startDate}|${week.endDate}`;
+function shiftIsoDate(isoDate, days) {
+  if (!isoDate) return "";
+  const [year, month, day] = isoDate.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() + days);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 export default function ReconciliationTab() {
@@ -27,27 +33,17 @@ export default function ReconciliationTab() {
   const [buyerName, setBuyerName] = useState("");
   const [campaigns, setCampaigns] = useState([]);
   const [buyers, setBuyers] = useState([]);
-  const [weeks, setWeeks] = useState([]);
   const [data, setData] = useState({ summary: {}, calls: [] });
   const [loading, setLoading] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [dataSource, setDataSource] = useState("ringba");
 
-  const selectedWeekKey = startDate && endDate ? `${startDate}|${endDate}` : "";
-
   useEffect(() => {
-    Promise.all([fetchReconciliationFilters(), fetchSyncedWeeks().catch(() => ({ weeks: [] }))])
-      .then(([filters, weeksPayload]) => {
-        const syncedWeeks = weeksPayload.weeks || filters.weeks || [];
-        setWeeks(syncedWeeks);
+    fetchReconciliationFilters()
+      .then((filters) => {
         setDataSource(filters.dataSource || "ringba");
-
-        const initialRange = syncedWeeks[0]
-          ? { startDate: syncedWeeks[0].startDate, endDate: syncedWeeks[0].endDate }
-          : filters.defaultRange;
-
-        setStartDate(initialRange?.startDate || "");
-        setEndDate(initialRange?.endDate || "");
+        setStartDate(filters.defaultRange?.startDate || "");
+        setEndDate(filters.defaultRange?.endDate || "");
         setCampaigns(filters.campaigns || []);
         setCampaignName(filters.defaultCampaign?.name || "");
         setBuyerName(filters.defaultBuyer?.name || "");
@@ -79,9 +75,12 @@ export default function ReconciliationTab() {
       .then((result) => {
         const nextBuyers = result.buyers || [];
         setBuyers(nextBuyers);
-        if (!nextBuyers.some((b) => b.name === buyerName)) {
-          setBuyerName(nextBuyers[0]?.name || "");
-        }
+        setBuyerName((prev) => {
+          if (!nextBuyers.some((b) => b.name === prev)) {
+            return nextBuyers[0]?.name || "";
+          }
+          return prev;
+        });
       })
       .catch(() => setBuyers([]));
   }, [campaignName, startDate, endDate]);
@@ -113,11 +112,11 @@ export default function ReconciliationTab() {
     [summary, campaignName, buyerName]
   );
 
-  const handleWeekChange = (value) => {
-    if (!value) return;
-    const [nextStart, nextEnd] = value.split("|");
-    setStartDate(nextStart);
-    setEndDate(nextEnd);
+  /** Shift the current From/To window by N days (keeps span length). */
+  const shiftDateRange = (days) => {
+    if (!startDate || !endDate) return;
+    setStartDate(shiftIsoDate(startDate, days));
+    setEndDate(shiftIsoDate(endDate, days));
   };
 
   const handleDownload = () => {
@@ -135,44 +134,23 @@ export default function ReconciliationTab() {
       <h3>Reconciliation</h3>
       <p className="subtle">
         {dataSource === "mongodb"
-          ? `Review sold calls by campaign and buyer. Weekly snapshots are kept in MongoDB for monthly invoicing (last 8 weeks refreshed every Monday 1:00 AM ET).${
+          ? `Review sold calls by campaign and buyer for the selected date range. Data is filtered to your From/To dates.${
               lastSyncedAt
                 ? ` Last synced ${new Date(lastSyncedAt).toLocaleString("en-US", { timeZone: "America/New_York" })} ET.`
                 : ""
             }`
-          : "Review sold calls by campaign and buyer for the selected week. Data loads live from Ringba."}
+          : "Review sold calls by campaign and buyer for the selected date range. Data loads live from Ringba."}
       </p>
 
-      {dataSource === "mongodb" && !loading && weeks.length === 0 ? (
+      {dataSource === "mongodb" && !loading && campaigns.length === 0 ? (
         <p className="subtle">
-          No synced reconciliation weeks yet. Run <code>npm run sync:reconciliation:history</code> or wait for
-          Monday&apos;s scheduled sync.
-        </p>
-      ) : null}
-
-      {dataSource === "mongodb" && !loading && weeks.length > 0 && campaigns.length === 0 ? (
-        <p className="subtle">
-          No campaign data found for {formatDateRange(startDate, endDate)}. Pick a week from the dropdown.
+          No campaign data found for {formatDateRange(startDate, endDate)}. Adjust the date range or wait for the next
+          sync.
         </p>
       ) : null}
 
       <div className="card filter-panel">
         <div className="filter-grid">
-          {weeks.length > 0 ? (
-            <label>
-              Week
-              <select value={selectedWeekKey} onChange={(e) => handleWeekChange(e.target.value)}>
-                {weeks.map((week) => (
-                  <option key={weekKey(week)} value={weekKey(week)}>
-                    {formatDateRange(week.startDate, week.endDate)}
-                  </option>
-                ))}
-                {selectedWeekKey && !weeks.some((week) => weekKey(week) === selectedWeekKey) ? (
-                  <option value={selectedWeekKey}>{formatDateRange(startDate, endDate)} (custom)</option>
-                ) : null}
-              </select>
-            </label>
-          ) : null}
           <label>
             Campaign
             <select value={campaignName} onChange={(e) => setCampaignName(e.target.value)}>
@@ -250,16 +228,38 @@ export default function ReconciliationTab() {
         <div className="section-head">
           <div>
             <h3>Sold Calls ({data.soldCallCount || 0})</h3>
-            <p className="subtle">Only calls with conversion amount are shown.</p>
+            <p className="subtle">Calls within {formatDateRange(startDate, endDate)} only.</p>
           </div>
-          <button
-            type="button"
-            className="btn btn-inline"
-            onClick={handleDownload}
-            disabled={loading || !(data.calls || []).length}
-          >
-            Download
-          </button>
+          <div className="row-actions">
+            <button
+              type="button"
+              className="btn btn-inline btn-small btn-week-nav"
+              onClick={() => shiftDateRange(-7)}
+              disabled={loading || !startDate || !endDate}
+              title="Shift range back 7 days"
+              aria-label="Previous period"
+            >
+              ←
+            </button>
+            <button
+              type="button"
+              className="btn btn-inline btn-small btn-week-nav"
+              onClick={() => shiftDateRange(7)}
+              disabled={loading || !startDate || !endDate}
+              title="Shift range forward 7 days"
+              aria-label="Next period"
+            >
+              →
+            </button>
+            <button
+              type="button"
+              className="btn btn-inline"
+              onClick={handleDownload}
+              disabled={loading || !(data.calls || []).length}
+            >
+              Download
+            </button>
+          </div>
         </div>
         <div className="table-wrap">
           <table>
@@ -275,7 +275,7 @@ export default function ReconciliationTab() {
               {(data.calls || []).length === 0 ? (
                 <tr>
                   <td colSpan={4} className="subtle">
-                    No sold calls found for this filter.
+                    No sold calls found for this date range.
                   </td>
                 </tr>
               ) : (

@@ -778,6 +778,15 @@ th {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
+  align-items: center;
+}
+
+.btn-week-nav {
+  min-width: 2.25rem;
+  padding-left: 0.65rem;
+  padding-right: 0.65rem;
+  font-size: 1rem;
+  line-height: 1;
 }
 
 .btn-danger {
