@@ -20,6 +20,9 @@ dist/
 # Website dependencies (install on server during deploy)
 website/node_modules/
 
+# nlmAPI local env
+nlmAPI/.env
+
 # Accidental junk from website import
 website/tatus*
 website/ers*
