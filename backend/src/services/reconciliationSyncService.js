@@ -1,12 +1,66 @@
+import { ReconciliationExcludedCall } from "../models/ReconciliationExcludedCall.js";
 import { ReconciliationRun } from "../models/ReconciliationRun.js";
 import { ReconciliationSnapshot } from "../models/ReconciliationSnapshot.js";
 import { hasRingbaConfig } from "../config.js";
 import { getLastWeekRange, getWeekRangeWeeksAgo } from "../utils/dateRange.js";
+import { buildCallKey } from "../utils/reconciliationCallKey.js";
 import { listCampaigns } from "./ringbaCampaignService.js";
 import {
   getBuyersForCampaign as fetchBuyersFromRingba,
   getReconciliationData as fetchReconciliationFromRingba,
 } from "./reconciliationService.js";
+
+async function loadExclusionKeySet() {
+  const exclusions = await ReconciliationExcludedCall.find({}).lean();
+  return new Set(
+    exclusions.map((row) =>
+      buildCallKey({
+        campaignName: row.campaignName,
+        buyerName: row.buyerName,
+        callDtRaw: row.callDtRaw,
+        inboundPhoneNumber: row.inboundPhoneNumber,
+        conversionAmount: row.conversionAmount,
+      })
+    )
+  );
+}
+
+function dropExcludedCalls(calls, campaignName, buyerName, exclusionKeys) {
+  if (!exclusionKeys?.size) return calls || [];
+  return (calls || []).filter(
+    (call) =>
+      !exclusionKeys.has(
+        buildCallKey({
+          campaignName,
+          buyerName,
+          callDtRaw: call.callDtRaw,
+          inboundPhoneNumber: call.inboundPhoneNumber,
+          conversionAmount: call.conversionAmount,
+        })
+      )
+  );
+}
+
+function summarizeSoldCalls(soldCalls, campaignName, buyerName) {
+  const revenue = soldCalls.reduce((sum, call) => sum + (Number(call.conversionAmount) || 0), 0);
+  const payout = soldCalls.reduce((sum, call) => sum + (Number(call.payoutAmount) || 0), 0);
+  const convertedCalls = soldCalls.length;
+  const profit = revenue - payout;
+  const round = (value) => Number((Number(value) || 0).toFixed(2));
+  const safeDivide = (n, d) => (d ? (Number.isFinite(n / d) ? n / d : 0) : 0);
+
+  return {
+    campaign: campaignName,
+    buyer: buyerName || "",
+    calls: convertedCalls,
+    convertedCalls,
+    rpc: round(safeDivide(revenue, convertedCalls)),
+    revenue: round(revenue),
+    payout: round(payout),
+    profit: round(profit),
+    convertedPercent: round(safeDivide(convertedCalls, convertedCalls) * 100),
+  };
+}
 
 export async function syncReconciliationWeek({ startDate, endDate } = getLastWeekRange()) {
   if (!hasRingbaConfig) {
@@ -25,6 +79,7 @@ export async function syncReconciliationWeek({ startDate, endDate } = getLastWee
   });
 
   const campaigns = await listCampaigns();
+  const exclusionKeys = await loadExclusionKeySet();
   let snapshotsWritten = 0;
   const errors = [];
 
@@ -50,7 +105,13 @@ export async function syncReconciliationWeek({ startDate, endDate } = getLastWee
           endDate,
         });
 
-        // Upsert only — never deletes prior weeks.
+        const calls = dropExcludedCalls(data.calls, campaign.name, buyer.name, exclusionKeys);
+        const summary =
+          calls.length === (data.calls || []).length
+            ? data.summary
+            : summarizeSoldCalls(calls, campaign.name, buyer.name);
+
+        // Upsert only — never deletes prior weeks. Exclusions survive re-sync.
         await ReconciliationSnapshot.findOneAndUpdate(
           {
             startDate,
@@ -64,10 +125,10 @@ export async function syncReconciliationWeek({ startDate, endDate } = getLastWee
             campaignId: campaign.id,
             campaignName: campaign.name,
             buyerName: buyer.name,
-            summary: data.summary,
-            calls: data.calls,
-            totalCallLogs: data.totalCallLogs,
-            soldCallCount: data.soldCallCount,
+            summary,
+            calls,
+            totalCallLogs: calls.length,
+            soldCallCount: calls.length,
             syncedAt: new Date(),
           },
           { upsert: true, new: true }

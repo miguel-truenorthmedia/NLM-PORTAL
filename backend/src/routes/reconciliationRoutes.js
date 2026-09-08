@@ -12,6 +12,7 @@ import {
   getReconciliationData as getReconciliationFromMongo,
   getReconciliationFilters as getFiltersFromMongo,
   listSyncedWeeks,
+  removeReconciliationCall,
 } from "../services/reconciliationStoreService.js";
 import {
   syncLastWeekReconciliation,
@@ -118,6 +119,36 @@ router.post("/sync", async (req, res) => {
   } catch (error) {
     console.error("Reconciliation sync failed:", error);
     return res.status(500).json({ error: error.message || "Failed to sync reconciliation data" });
+  }
+});
+
+/** Remove a disputed sold call from stored reconciliation (persists across Ringba re-sync). */
+router.delete("/calls", async (req, res) => {
+  if (!hasMongoConfig) {
+    return res.status(400).json({
+      error: "MongoDB is disabled. Call removal requires stored reconciliation data.",
+    });
+  }
+
+  const { campaignName, buyerName, callDtRaw, inboundPhoneNumber, conversionAmount } = req.body || {};
+  if (!campaignName || !buyerName || callDtRaw == null || callDtRaw === "") {
+    return res.status(400).json({
+      error: "campaignName, buyerName, and callDtRaw are required",
+    });
+  }
+
+  try {
+    const result = await removeReconciliationCall({
+      campaignName,
+      buyerName,
+      callDtRaw,
+      inboundPhoneNumber,
+      conversionAmount,
+    });
+    return res.json(withDataSource(result));
+  } catch (error) {
+    console.error("Reconciliation call delete failed:", error);
+    return res.status(500).json({ error: error.message || "Failed to remove call" });
   }
 });
 

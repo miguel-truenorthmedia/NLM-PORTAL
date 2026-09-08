@@ -789,6 +789,25 @@ th {
   line-height: 1;
 }
 
+.recon-search-row {
+  margin: 0 0 0.85rem;
+}
+
+.recon-search-row label {
+  display: grid;
+  gap: 0.4rem;
+  max-width: 280px;
+  font-weight: 600;
+}
+
+.recon-search-row input {
+  border: 1px solid var(--border-input);
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+  background: var(--surface);
+  color: var(--text);
+}
+
 .btn-danger {
   background: color-mix(in srgb, var(--trend-negative) 18%, var(--surface));
   color: var(--trend-negative);

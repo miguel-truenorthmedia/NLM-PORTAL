@@ -75,6 +75,25 @@ export async function fetchReconciliation({ campaignName, buyerName, startDate, 
   return response.data;
 }
 
+export async function deleteReconciliationCall({
+  campaignName,
+  buyerName,
+  callDtRaw,
+  inboundPhoneNumber,
+  conversionAmount,
+}) {
+  const response = await api.delete("/reconciliation/calls", {
+    data: {
+      campaignName,
+      buyerName,
+      callDtRaw,
+      inboundPhoneNumber,
+      conversionAmount,
+    },
+  });
+  return response.data;
+}
+
 export async function fetchBuyers() {
   const response = await api.get("/buyers");
   return response.data;
