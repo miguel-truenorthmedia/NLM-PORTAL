@@ -7,7 +7,9 @@
     "start": "node scheduler.js",
     "once": "node scheduler.js --once",
     "blocker": "node ringbaNumberBlocker.js",
-    "blocker:dry": "node runBlockerDry.js"
+    "blocker:dry": "node runBlockerDry.js",
+    "blocked-reset": "node ringbaBlockedNumberReset.js",
+    "blocked-reset:dry": "node ringbaBlockedNumberReset.js --dry-run"
   },
   "dependencies": {
     "axios": "^1.11.0",

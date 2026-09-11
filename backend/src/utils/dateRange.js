@@ -17,13 +17,22 @@ export function toEasternDateString(date = new Date()) {
   }).format(date);
 }
 
+/** Shift an Eastern calendar YYYY-MM-DD by N days (calendar math, not UTC). */
+export function shiftEasternDateString(isoDate, days) {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() + days);
+  return toLocalDateString(date);
+}
+
 /** Yesterday in Eastern time — used by the 1 AM ET daily Ringba sync. */
 export function getYesterdayDate(referenceDate = new Date()) {
-  const easternToday = toEasternDateString(referenceDate);
-  const [year, month, day] = easternToday.split("-").map(Number);
-  const easternDate = new Date(year, month - 1, day);
-  easternDate.setDate(easternDate.getDate() - 1);
-  return toLocalDateString(easternDate);
+  return shiftEasternDateString(toEasternDateString(referenceDate), -1);
+}
+
+/** Tomorrow in Eastern time — used by invoice due-soon Slack alerts. */
+export function getTomorrowDate(referenceDate = new Date()) {
+  return shiftEasternDateString(toEasternDateString(referenceDate), 1);
 }
 
 export function getLastWeekRange(referenceDate = new Date()) {

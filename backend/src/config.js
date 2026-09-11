@@ -18,6 +18,14 @@ export const config = {
   bigoEmailClientId: process.env.BIGO_EMAIL_GMAIL_CLIENT_ID || "",
   bigoEmailClientSecret: process.env.BIGO_EMAIL_GMAIL_CLIENT_SECRET || "",
   bigoEmailRefreshToken: process.env.BIGO_EMAIL_GMAIL_REFRESH_TOKEN || "",
+  // QuickBooks Online (invoice alerts)
+  qboClientId: process.env.QBO_CLIENT_ID || "",
+  qboClientSecret: process.env.QBO_CLIENT_SECRET || "",
+  qboRefreshToken: process.env.QBO_REFRESH_TOKEN || "",
+  qboRealmId: process.env.QBO_REALM_ID || "",
+  qboEnvironment: (process.env.QBO_ENVIRONMENT || "sandbox").toLowerCase(),
+  // Slack — accounting invoice alerts
+  slackInvoiceWebhookUrl: process.env.SLACK_INVOICE_WEBHOOK_URL || "",
 };
 
 export const hasMongoConfig = Boolean(config.useMongoDb && config.mongoUri);
@@ -30,3 +38,7 @@ export const hasGoogleSheetsConfig = Boolean(
 export const hasBigoEmailConfig = Boolean(
   config.bigoEmailClientId && config.bigoEmailClientSecret && config.bigoEmailRefreshToken
 );
+export const hasQuickBooksConfig = Boolean(
+  config.qboClientId && config.qboClientSecret && config.qboRefreshToken && config.qboRealmId
+);
+export const hasSlackInvoiceWebhook = Boolean(config.slackInvoiceWebhookUrl);

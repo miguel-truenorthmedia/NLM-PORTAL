@@ -14,7 +14,9 @@
     "test:mongo": "node scripts/test-mongo-connection.mjs",
     "seed:admin": "node scripts/seed-admin.mjs",
     "sync:bigo-email": "node scripts/sync-bigo-email.mjs",
-    "test:bigo-email-parser": "node scripts/test-bigo-email-parser.mjs"
+    "test:bigo-email-parser": "node scripts/test-bigo-email-parser.mjs",
+    "alerts:invoices": "node scripts/run-invoice-alerts.mjs",
+    "alerts:invoices:dry": "node scripts/run-invoice-alerts.mjs --dry-run"
   },
   "dependencies": {
     "axios": "^1.11.0",

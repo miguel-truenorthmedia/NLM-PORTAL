@@ -1,15 +1,17 @@
 import cors from "cors";
 import express from "express";
 
-import { config, hasAuthConfig, hasMongoConfig } from "./config.js";
+import { config, hasAuthConfig, hasMongoConfig, hasQuickBooksConfig } from "./config.js";
 import { connectMongo } from "./db/mongo.js";
 import { migrateLegacySpendToMongo } from "./services/campaignSpendService.js";
 import { requireAuth, requireAdmin } from "./middleware/authMiddleware.js";
 import { startCampaignSyncJob } from "./jobs/campaignSyncJob.js";
+import { startInvoiceAlertJob } from "./jobs/invoiceAlertJob.js";
 import { startReconciliationSyncJob } from "./jobs/reconciliationSyncJob.js";
 import authRoutes from "./routes/authRoutes.js";
 import buyerRoutes from "./routes/buyerRoutes.js";
 import campaignRoutes from "./routes/campaignRoutes.js";
+import invoiceAlertRoutes from "./routes/invoiceAlertRoutes.js";
 import reconciliationRoutes from "./routes/reconciliationRoutes.js";
 import syncRoutes from "./routes/syncRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
@@ -28,6 +30,7 @@ app.get("/api/health", (_req, res) => {
     useMongoDb: config.useMongoDb,
     mongoConnected: hasMongoConfig,
     authEnabled: hasAuthConfig,
+    quickBooksConfigured: hasQuickBooksConfig,
   });
 });
 
@@ -36,6 +39,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/campaign", requireAuth, campaignRoutes);
 app.use("/api/reconciliation", requireAuth, reconciliationRoutes);
 app.use("/api/buyers", requireAuth, buyerRoutes);
+app.use("/api/accounting/invoice-alerts", requireAuth, requireAdmin, invoiceAlertRoutes);
 app.use("/api/sync", requireAuth, requireAdmin, syncRoutes);
 
 async function ensureAdminUser() {
@@ -69,9 +73,11 @@ async function start() {
     await ensureAdminUser();
     startReconciliationSyncJob();
     startCampaignSyncJob();
+    startInvoiceAlertJob();
     console.log("MongoDB enabled — portal reads from database (Ringba sync on schedule)");
   } else {
     console.log("MongoDB disabled — portal reads live from Ringba");
+    startInvoiceAlertJob();
   }
 
   app.listen(config.port, () => {
