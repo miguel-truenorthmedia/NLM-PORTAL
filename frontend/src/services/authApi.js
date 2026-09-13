@@ -19,8 +19,16 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    const isLoginRequest = error.config?.url?.includes("/auth/login");
-    if (error.response?.status === 401 && !isLoginRequest) {
+    const url = error.config?.url || "";
+    const isLoginRequest = url.includes("/auth/login");
+    const isInviteFlow = url.includes("/auth/invites/");
+    const onPublicAuthPage =
+      typeof window !== "undefined" &&
+      (window.location.pathname.includes("/invite/") ||
+        window.location.pathname.includes("/reset-password/") ||
+        window.location.pathname.startsWith("/login"));
+
+    if (error.response?.status === 401 && !isLoginRequest && !isInviteFlow && !onPublicAuthPage) {
       localStorage.removeItem(TOKEN_KEY);
       if (!window.location.pathname.startsWith("/login")) {
         redirectToLogin(`${window.location.pathname}${window.location.search}`);
@@ -65,6 +73,41 @@ export async function registerUser(payload) {
 export async function fetchUsers() {
   const response = await api.get("/users");
   return response.data.users;
+}
+
+export async function fetchUsersAdmin() {
+  const response = await api.get("/users");
+  return response.data;
+}
+
+export async function createUserInvite(payload) {
+  const response = await api.post("/users/invites", payload);
+  return response.data.invite;
+}
+
+export async function createPasswordResetLink(userId) {
+  const response = await api.post(`/users/${userId}/password-reset`);
+  return response.data.invite;
+}
+
+export async function updateUser(userId, payload) {
+  const response = await api.patch(`/users/${userId}`, payload);
+  return response.data.user;
+}
+
+export async function deleteUser(userId) {
+  const response = await api.delete(`/users/${userId}`);
+  return response.data;
+}
+
+export async function peekInviteToken(token) {
+  const response = await api.get(`/auth/invites/${token}`);
+  return response.data.invite;
+}
+
+export async function acceptInviteToken(token, payload) {
+  const response = await api.post(`/auth/invites/${token}/accept`, payload);
+  return response.data;
 }
 
 export default api;

@@ -1,8 +1,12 @@
 import express from "express";
 
-import { requireAuth, requireAdmin } from "../middleware/authMiddleware.js";
-import { createUser, loginUser, sanitizeUser } from "../services/authService.js";
-import { findUserById } from "../services/authService.js";
+import { requireAuth, requireCeo } from "../middleware/authMiddleware.js";
+import {
+  acceptInvite,
+  acceptPasswordReset,
+  peekInviteToken,
+} from "../services/inviteService.js";
+import { createUser, loginUser, sanitizeUser, findUserById, signToken } from "../services/authService.js";
 
 const router = express.Router();
 
@@ -32,7 +36,8 @@ router.post("/login", async (req, res) => {
   }
 });
 
-router.post("/register", requireAuth, requireAdmin, async (req, res) => {
+/** Legacy direct register — CEO only; prefer invite links from Users page */
+router.post("/register", requireAuth, requireCeo, async (req, res) => {
   try {
     const { email, password } = validateCredentials(req.body);
     const user = await createUser({
@@ -46,6 +51,41 @@ router.post("/register", requireAuth, requireAdmin, async (req, res) => {
     return res.status(201).json({ ok: true, user });
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || "Registration failed" });
+  }
+});
+
+router.get("/invites/:token", async (req, res) => {
+  try {
+    const invite = await peekInviteToken(req.params.token);
+    return res.json({ ok: true, invite });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "Invalid invite" });
+  }
+});
+
+router.post("/invites/:token/accept", async (req, res) => {
+  try {
+    const password = String(req.body.password || "");
+    const confirm = String(req.body.confirmPassword || req.body.passwordConfirm || "");
+    if (confirm && password !== confirm) {
+      return res.status(400).json({ error: "Passwords do not match" });
+    }
+
+    const peek = await peekInviteToken(req.params.token);
+    if (peek.type === "password_reset") {
+      const user = await acceptPasswordReset(req.params.token, { password });
+      const token = signToken(user);
+      return res.json({ ok: true, token, user });
+    }
+
+    const user = await acceptInvite(req.params.token, {
+      password,
+      name: req.body.name,
+    });
+    const token = signToken(user);
+    return res.json({ ok: true, token, user });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "Failed to accept invite" });
   }
 });
 

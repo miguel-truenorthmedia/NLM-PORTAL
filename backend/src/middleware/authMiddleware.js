@@ -33,3 +33,10 @@ export function requireAdmin(req, res, next) {
   }
   return next();
 }
+
+export function requireCeo(req, res, next) {
+  if (!req.user || String(req.user.role || "").toLowerCase() !== "ceo") {
+    return res.status(403).json({ error: "CEO access required" });
+  }
+  return next();
+}

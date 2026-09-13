@@ -92,7 +92,11 @@ router.put("/expenses/:id", async (req, res) => {
 
 router.delete("/expenses/:id", async (req, res) => {
   try {
-    const result = await deletePnLExpense(req.params.id, req.user);
+    const hard =
+      req.query.hard === "1" ||
+      req.query.hard === "true" ||
+      req.body?.hard === true;
+    const result = await deletePnLExpense(req.params.id, req.user, { hard });
     res.json(result);
   } catch (error) {
     res.status(statusForError(error.message)).json({ error: error.message });

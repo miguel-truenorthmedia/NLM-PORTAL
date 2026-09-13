@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import KpiCards from "../../components/KpiCards.jsx";
 import { PnLExpenseBreakdownChart, PnLTrendChart } from "../../components/PnLCharts.jsx";
 import { formatCurrency, formatPercent } from "../../components/formatters.js";
@@ -6,7 +6,9 @@ import {
   createPnLExpense,
   deletePnLExpense,
   fetchPnLOverview,
+  hidePnLExpense,
   syncRingbaPnLBilling,
+  updatePnLExpense,
 } from "../../services/api.js";
 
 function currentMonthKey() {
@@ -37,9 +39,85 @@ const EMPTY_FORM = {
   description: "",
   amount: "",
   category: "Ringba",
+  platform: "",
   date: "",
+  paymentMethod: "",
   notes: "",
 };
+
+function ExpenseRowMenu({ busy, onEdit, onHide, onDelete }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDoc = (event) => {
+      if (rootRef.current && !rootRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (event) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="row-menu" ref={rootRef}>
+      <button
+        type="button"
+        className="row-menu-trigger"
+        aria-label="Expense actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={busy}
+        onClick={() => setOpen((value) => !value)}
+      >
+        ⋮
+      </button>
+      {open ? (
+        <div className="row-menu-dropdown" role="menu">
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onEdit();
+            }}
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onHide();
+            }}
+          >
+            Hide
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="row-menu-danger"
+            onClick={() => {
+              setOpen(false);
+              onDelete();
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export default function PnLTab() {
   const [month, setMonth] = useState(currentMonthKey);
@@ -47,10 +125,11 @@ export default function PnLTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState("");
   const [form, setForm] = useState(EMPTY_FORM);
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [deletingId, setDeletingId] = useState("");
+  const [actionId, setActionId] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
 
@@ -74,6 +153,8 @@ export default function PnLTab() {
   const previous = data?.previous;
   const comparison = data?.comparison;
   const categories = data?.meta?.categories || ["Other"];
+  const comparisonLabel = data?.meta?.comparisonLabel || "vs last month";
+  const partialMonth = Boolean(data?.meta?.partialMonth);
 
   const kpiItems = useMemo(() => {
     if (!current) return [];
@@ -83,7 +164,7 @@ export default function PnLTab() {
       { label: "Campaign Profit", value: current.campaignProfit, type: "currency", tone: "profit" },
       { label: "Operating Expenses", value: current.operatingExpenses, type: "currency", tone: "spend" },
       { label: "Net Profit", value: current.netProfit, type: "currency", tone: "profit" },
-      { label: "Net Margin", value: current.netMargin, type: "percent", tone: "roi" },
+      { label: "Net Margin (vs Ad Spend)", value: current.netMargin, type: "percent", tone: "roi" },
     ];
   }, [current]);
 
@@ -112,7 +193,23 @@ export default function PnLTab() {
   };
 
   const openAdd = () => {
+    setEditingId("");
     setForm({ ...EMPTY_FORM, category: categories[0] || "Other" });
+    setFormError("");
+    setShowAdd(true);
+  };
+
+  const openEdit = (row) => {
+    setEditingId(row.id);
+    setForm({
+      description: row.description || "",
+      amount: String(row.amount ?? ""),
+      category: row.category || categories[0] || "Other",
+      platform: row.platform || "",
+      date: row.date || "",
+      paymentMethod: row.paymentMethod || "",
+      notes: row.notes || "",
+    });
     setFormError("");
     setShowAdd(true);
   };
@@ -120,6 +217,7 @@ export default function PnLTab() {
   const closeAdd = () => {
     if (submitting) return;
     setShowAdd(false);
+    setEditingId("");
     setForm(EMPTY_FORM);
     setFormError("");
   };
@@ -129,41 +227,67 @@ export default function PnLTab() {
     setFormError("");
     setSubmitting(true);
     try {
-      await createPnLExpense({
+      const payload = {
         month,
         description: form.description,
         amount: form.amount,
         category: form.category,
+        platform: form.platform,
         date: form.date,
+        paymentMethod: form.paymentMethod,
         notes: form.notes,
-        source: "manual",
-      });
+      };
+      if (editingId) {
+        await updatePnLExpense(editingId, payload);
+      } else {
+        await createPnLExpense({ ...payload, source: "manual" });
+      }
       closeAdd();
       await load();
     } catch (err) {
-      setFormError(err.response?.data?.error || err.message || "Failed to add expense");
+      setFormError(
+        err.response?.data?.error || err.message || (editingId ? "Failed to update expense" : "Failed to add expense")
+      );
     } finally {
       setSubmitting(false);
     }
   };
 
-  const removeExpense = async (id) => {
+  const hideExpense = async (id) => {
     if (
-      !window.confirm(
-        "Hide this expense from monthly P&L? It will still appear on P&L Historical."
-      )
+      !window.confirm("Hide this expense from monthly P&L? It will still appear on P&L Historical.")
     ) {
       return;
     }
-    setDeletingId(id);
+    setActionId(id);
     setError("");
     try {
-      await deletePnLExpense(id);
+      await hidePnLExpense(id);
       await load();
     } catch (err) {
       setError(err.response?.data?.error || err.message || "Failed to hide expense");
     } finally {
-      setDeletingId("");
+      setActionId("");
+    }
+  };
+
+  const removeExpense = async (row) => {
+    if (
+      !window.confirm(
+        `Permanently delete "${row.description}"? This removes it from monthly and Historical P&L.`
+      )
+    ) {
+      return;
+    }
+    setActionId(row.id);
+    setError("");
+    try {
+      await deletePnLExpense(row.id);
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || "Failed to delete expense");
+    } finally {
+      setActionId("");
     }
   };
 
@@ -212,19 +336,20 @@ export default function PnLTab() {
               <strong>{current.label}</strong>
               <p className="subtle">
                 {data.meta?.betterThanLastMonth
-                  ? "Net profit is up vs last month"
-                  : "Net profit is flat or down vs last month"}
+                  ? `Net profit is up ${comparisonLabel}`
+                  : `Net profit is flat or down ${comparisonLabel}`}
+                {partialMonth ? ` · through day ${data.meta?.asOfDay}` : ""}
               </p>
             </div>
             <div className="pnl-verdict-figures">
               <div>
-                <span className="subtle">This month</span>
+                <span className="subtle">{partialMonth ? "This month (MTD)" : "This month"}</span>
                 <strong className={current.netProfit >= 0 ? "pnl-positive" : "pnl-negative"}>
                   {formatCurrency(current.netProfit)}
                 </strong>
               </div>
               <div>
-                <span className="subtle">Last month</span>
+                <span className="subtle">{partialMonth ? "Same days last month" : "Last month"}</span>
                 <strong>{formatCurrency(previous?.netProfit || 0)}</strong>
               </div>
               {comparison?.netProfit ? <Delta value={comparison.netProfit.delta} pct={comparison.netProfit.pct} /> : null}
@@ -244,7 +369,9 @@ export default function PnLTab() {
               if (!row) return null;
               return (
                 <div className="card pnl-compare-card" key={key}>
-                  <p className="kpi-label">{label} vs last month</p>
+                  <p className="kpi-label">
+                    {label} {comparisonLabel}
+                  </p>
                   <p className="kpi-value">{formatCurrency(row.current)}</p>
                   <Delta value={row.delta} pct={row.pct} />
                 </div>
@@ -292,7 +419,7 @@ export default function PnLTab() {
                     </td>
                   </tr>
                   <tr>
-                    <td>Net margin</td>
+                    <td>Net margin (net profit ÷ ad spend)</td>
                     <td>{formatPercent(current.netMargin)}</td>
                   </tr>
                 </tbody>
@@ -349,16 +476,13 @@ export default function PnLTab() {
                           <span className={`pnl-source pnl-source--${row.source}`}>{row.source}</span>
                         </td>
                         <td>{formatCurrency(row.amount)}</td>
-                        <td>
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-small"
-                            disabled={deletingId === row.id}
-                            onClick={() => removeExpense(row.id)}
-                            title="Hide from monthly P&L (keeps on Historical)"
-                          >
-                            {deletingId === row.id ? "..." : "Hide"}
-                          </button>
+                        <td className="row-menu-cell">
+                          <ExpenseRowMenu
+                            busy={actionId === row.id}
+                            onEdit={() => openEdit(row)}
+                            onHide={() => hideExpense(row.id)}
+                            onDelete={() => removeExpense(row)}
+                          />
                         </td>
                       </tr>
                     ))
@@ -376,11 +500,15 @@ export default function PnLTab() {
             className="modal-card"
             role="dialog"
             aria-modal="true"
-            aria-label="Add expense"
+            aria-label={editingId ? "Edit expense" : "Add expense"}
             onClick={(e) => e.stopPropagation()}
           >
-            <h3>Add expense</h3>
-            <p className="subtle">Saved to {month}. Use category “Ringba” for platform fees until auto-sync is live.</p>
+            <h3>{editingId ? "Edit expense" : "Add expense"}</h3>
+            <p className="subtle">
+              {editingId
+                ? `Updating expense in ${month}.`
+                : `Saved to ${month}. Use category “Ringba” for platform fees until auto-sync is live.`}
+            </p>
             <form className="spend-form" onSubmit={submitAdd}>
               <label>
                 Description
@@ -417,11 +545,27 @@ export default function PnLTab() {
                 </select>
               </label>
               <label>
+                Platform (optional)
+                <input
+                  type="text"
+                  value={form.platform}
+                  onChange={(e) => setForm((prev) => ({ ...prev, platform: e.target.value }))}
+                />
+              </label>
+              <label>
                 Date (optional)
                 <input
                   type="date"
                   value={form.date}
                   onChange={(e) => setForm((prev) => ({ ...prev, date: e.target.value }))}
+                />
+              </label>
+              <label>
+                Payment method (optional)
+                <input
+                  type="text"
+                  value={form.paymentMethod}
+                  onChange={(e) => setForm((prev) => ({ ...prev, paymentMethod: e.target.value }))}
                 />
               </label>
               <label>
@@ -438,7 +582,7 @@ export default function PnLTab() {
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-inline" disabled={submitting}>
-                  {submitting ? "Saving..." : "Save expense"}
+                  {submitting ? "Saving..." : editingId ? "Save changes" : "Save expense"}
                 </button>
               </div>
             </form>

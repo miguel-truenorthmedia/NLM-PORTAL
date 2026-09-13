@@ -148,7 +148,8 @@ function buildMonthStatement(bounds, campaign, expenses) {
     grossMargin: round(safeDivide(campaign.campaignProfit, campaign.revenue) * 100),
     operatingExpenses,
     netProfit,
-    netMargin: round(safeDivide(netProfit, campaign.revenue) * 100),
+    /** Net profit ÷ ad spend — $ returned (or lost) per $1 of ad spend */
+    netMargin: round(safeDivide(netProfit, campaign.adSpend) * 100),
     calls: campaign.calls,
     convertedCalls: campaign.convertedCalls,
     avgRoi: campaign.avgRoi,
@@ -173,6 +174,59 @@ function withComparison(current, previous) {
   return changes;
 }
 
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+/**
+ * For an incomplete selected month (usually the current month), compare only through
+ * the same calendar day last month — not a full prior month vs partial current.
+ * Prefer the latest day that actually has campaign rows so we match available data.
+ */
+function comparableAsOf(selected, asOfDate) {
+  const end = String(asOfDate || selected.endDate);
+  const asOfDay = Number(end.slice(8, 10));
+  const monthLastDay = Number(selected.endDate.slice(8, 10));
+  return {
+    partial: end < selected.endDate,
+    asOfDay,
+    currentEndDate: end,
+    monthLastDay,
+  };
+}
+
+async function resolveComparableAsOf(selected) {
+  const todayEastern = toEasternDateString();
+  const todayMonth = todayEastern.slice(0, 7);
+
+  // Completed past months → full month vs full month
+  if (selected.month < todayMonth) {
+    return comparableAsOf(selected, selected.endDate);
+  }
+
+  const latestRow = await CampaignDailyRow.findOne({
+    date: { $gte: selected.startDate, $lte: selected.endDate },
+  })
+    .sort({ date: -1 })
+    .select({ date: 1 })
+    .lean();
+
+  // Use latest synced campaign day in this month (falls back to Eastern today)
+  let asOfDate = latestRow?.date || todayEastern;
+  if (asOfDate > selected.endDate) asOfDate = selected.endDate;
+  return comparableAsOf(selected, asOfDate);
+}
+
+function priorComparableEndDate(previous, asOfDay) {
+  const monthLastDay = Number(previous.endDate.slice(8, 10));
+  const day = Math.min(asOfDay, monthLastDay);
+  return `${previous.month}-${pad2(day)}`;
+}
+
+function expensesThroughDate(expenses, endDate) {
+  return (expenses || []).filter((row) => !row.date || row.date <= endDate);
+}
+
 /**
  * Full P&L overview for a month: statement, MoM comparison, trend, expenses.
  */
@@ -181,25 +235,42 @@ export async function getPnLOverview({ month } = {}) {
   const selected = monthBounds(month || currentMonthKey());
   const previousKey = shiftMonth(selected.month, -1);
   const previous = monthBounds(previousKey);
+  const asOf = await resolveComparableAsOf(selected);
+  const priorEndDate = priorComparableEndDate(previous, asOf.asOfDay);
 
   const trendMonths = [];
   for (let i = 5; i >= 0; i -= 1) {
     trendMonths.push(monthBounds(shiftMonth(selected.month, -i)));
   }
 
-  const [currentCampaign, previousCampaign, currentExpenses, previousExpenses, ...trendCampaigns] =
+  const [currentCampaign, previousCampaign, currentExpensesAll, previousExpensesAll, ...trendCampaigns] =
     await Promise.all([
-      getCampaignMonthTotals(selected.startDate, selected.endDate),
-      getCampaignMonthTotals(previous.startDate, previous.endDate),
+      getCampaignMonthTotals(selected.startDate, asOf.currentEndDate),
+      getCampaignMonthTotals(previous.startDate, priorEndDate),
       getExpensesForMonth(selected.month),
       getExpensesForMonth(previous.month),
       ...trendMonths.map((bounds) => getCampaignMonthTotals(bounds.startDate, bounds.endDate)),
     ]);
 
+  const currentExpenses = expensesThroughDate(currentExpensesAll, asOf.currentEndDate);
+  const previousExpenses = expensesThroughDate(previousExpensesAll, priorEndDate);
   const trendExpenseLists = await Promise.all(trendMonths.map((bounds) => getExpensesForMonth(bounds.month)));
 
-  const current = buildMonthStatement(selected, currentCampaign, currentExpenses);
-  const prior = buildMonthStatement(previous, previousCampaign, previousExpenses);
+  const currentBounds = {
+    ...selected,
+    endDate: asOf.currentEndDate,
+    label: asOf.partial ? `${selected.label} (through day ${asOf.asOfDay})` : selected.label,
+  };
+  const priorBounds = {
+    ...previous,
+    endDate: priorEndDate,
+    label: asOf.partial
+      ? `${previous.label} (days 1–${Number(priorEndDate.slice(8, 10))})`
+      : previous.label,
+  };
+
+  const current = buildMonthStatement(currentBounds, currentCampaign, currentExpenses);
+  const prior = buildMonthStatement(priorBounds, previousCampaign, previousExpenses);
 
   const trend = trendMonths.map((bounds, index) => {
     const statement = buildMonthStatement(bounds, trendCampaigns[index], trendExpenseLists[index]);
@@ -227,6 +298,11 @@ export async function getPnLOverview({ month } = {}) {
       sources: PNL_EXPENSE_SOURCES,
       dataSource: currentCampaign.dataSource,
       betterThanLastMonth: current.netProfit > prior.netProfit,
+      partialMonth: asOf.partial,
+      comparisonLabel: asOf.partial ? "vs same days last month" : "vs last month",
+      asOfDay: asOf.asOfDay,
+      currentEndDate: asOf.currentEndDate,
+      priorEndDate,
     },
   };
 }
@@ -421,21 +497,45 @@ export async function updatePnLExpense(id, body, user) {
   return normalizeExpense(existing.toObject());
 }
 
-export async function deletePnLExpense(id, user) {
+export async function deletePnLExpense(id, user, { hard = false } = {}) {
   requireMongo();
   const existing = await PnLExpense.findById(id);
   if (!existing) throw new Error("Expense not found");
 
-  // Soft-hide: remove from monthly P&L only; keep on P&L Historical
-  existing.historicalOnly = true;
-  existing.updatedBy = actorFromUser(user);
-  await existing.save();
+  if (!hard) {
+    // Soft-hide: remove from monthly P&L only; keep on P&L Historical
+    existing.historicalOnly = true;
+    existing.updatedBy = actorFromUser(user);
+    await existing.save();
+
+    return {
+      deleted: false,
+      hiddenFromMonthly: true,
+      id: String(existing._id),
+      expense: normalizeExpense(existing.toObject()),
+    };
+  }
+
+  const externalId = String(existing.externalId || "").trim();
+  if (externalId) {
+    await PnLExpenseExclusion.findOneAndUpdate(
+      { externalId },
+      {
+        externalId,
+        source: existing.source || "",
+        description: existing.description || "",
+        deletedBy: actorFromUser(user),
+      },
+      { upsert: true, new: true }
+    );
+  }
+
+  await PnLExpense.deleteOne({ _id: existing._id });
 
   return {
     deleted: true,
-    hiddenFromMonthly: true,
+    hiddenFromMonthly: false,
     id: String(existing._id),
-    expense: normalizeExpense(existing.toObject()),
   };
 }
 

@@ -1,27 +1,55 @@
 import express from "express";
 
-import { requireAuth, requireAdmin } from "../middleware/authMiddleware.js";
+import { requireAuth, requireCeo } from "../middleware/authMiddleware.js";
 import { User } from "../models/User.js";
 import { hashPassword, sanitizeUser } from "../services/authService.js";
+import {
+  createInviteLink,
+  createPasswordResetLink,
+  deleteUserAsCeo,
+  listUsersAndInvites,
+  updateUserAsCeo,
+} from "../services/inviteService.js";
 
 const router = express.Router();
 
 router.use(requireAuth);
 
-router.get("/", requireAdmin, async (_req, res) => {
+router.get("/", requireCeo, async (_req, res) => {
   try {
-    const users = await User.find().sort({ createdAt: -1 });
-    return res.json({ ok: true, users: users.map(sanitizeUser) });
+    const payload = await listUsersAndInvites();
+    return res.json({ ok: true, ...payload });
   } catch (error) {
     return res.status(500).json({ error: error.message || "Failed to load users" });
   }
 });
 
+router.post("/invites", requireCeo, async (req, res) => {
+  try {
+    const invite = await createInviteLink(
+      { email: req.body.email, role: req.body.role },
+      req.user
+    );
+    return res.status(201).json({ ok: true, invite });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "Failed to create invite" });
+  }
+});
+
+router.post("/:id/password-reset", requireCeo, async (req, res) => {
+  try {
+    const invite = await createPasswordResetLink(req.params.id, req.user);
+    return res.status(201).json({ ok: true, invite });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "Failed to create reset link" });
+  }
+});
+
 router.get("/:id", async (req, res) => {
   try {
-    const isAdmin = req.user.role === "admin";
+    const isCeo = String(req.user.role || "").toLowerCase() === "ceo";
     const isSelf = req.user._id.toString() === req.params.id;
-    if (!isAdmin && !isSelf) {
+    if (!isCeo && !isSelf) {
       return res.status(403).json({ error: "Access denied" });
     }
 
@@ -38,12 +66,18 @@ router.get("/:id", async (req, res) => {
 
 router.patch("/:id", async (req, res) => {
   try {
-    const isAdmin = req.user.role === "admin";
+    const isCeo = String(req.user.role || "").toLowerCase() === "ceo";
     const isSelf = req.user._id.toString() === req.params.id;
-    if (!isAdmin && !isSelf) {
+    if (!isCeo && !isSelf) {
       return res.status(403).json({ error: "Access denied" });
     }
 
+    if (isCeo && (req.body.role !== undefined || req.body.active !== undefined || !isSelf)) {
+      const user = await updateUserAsCeo(req.params.id, req.body, req.user);
+      return res.json({ ok: true, user });
+    }
+
+    // Self-service: name + password only
     const user = await User.findById(req.params.id);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
@@ -60,34 +94,19 @@ router.patch("/:id", async (req, res) => {
       user.passwordHash = await hashPassword(req.body.password);
     }
 
-    if (isAdmin) {
-      if (req.body.role !== undefined) user.role = req.body.role;
-      if (req.body.adAccountIds !== undefined) user.adAccountIds = req.body.adAccountIds;
-      if (req.body.buyerNames !== undefined) user.buyerNames = req.body.buyerNames;
-      if (req.body.active !== undefined) user.active = Boolean(req.body.active);
-    }
-
     await user.save();
     return res.json({ ok: true, user: sanitizeUser(user) });
   } catch (error) {
-    return res.status(500).json({ error: error.message || "Failed to update user" });
+    return res.status(error.status || 500).json({ error: error.message || "Failed to update user" });
   }
 });
 
-router.delete("/:id", requireAdmin, async (req, res) => {
+router.delete("/:id", requireCeo, async (req, res) => {
   try {
-    if (req.user._id.toString() === req.params.id) {
-      return res.status(400).json({ error: "You cannot delete your own account" });
-    }
-
-    const user = await User.findByIdAndDelete(req.params.id);
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    return res.json({ ok: true, message: "User deleted" });
+    const result = await deleteUserAsCeo(req.params.id, req.user);
+    return res.json(result);
   } catch (error) {
-    return res.status(500).json({ error: error.message || "Failed to delete user" });
+    return res.status(error.status || 500).json({ error: error.message || "Failed to delete user" });
   }
 });
 

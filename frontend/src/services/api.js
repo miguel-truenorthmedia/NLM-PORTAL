@@ -166,8 +166,15 @@ export async function updatePnLExpense(id, payload) {
   return response.data;
 }
 
-export async function deletePnLExpense(id) {
+export async function hidePnLExpense(id) {
   const response = await api.delete(`/accounting/pnl/expenses/${id}`);
+  return response.data;
+}
+
+export async function deletePnLExpense(id) {
+  const response = await api.delete(`/accounting/pnl/expenses/${id}`, {
+    params: { hard: true },
+  });
   return response.data;
 }
 

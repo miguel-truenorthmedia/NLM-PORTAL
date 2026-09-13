@@ -6,7 +6,9 @@ import { useAuth } from "./context/AuthContext.jsx";
 import { useTheme } from "./context/ThemeContext.jsx";
 import CampaignDashboard from "./pages/CampaignDashboard.jsx";
 import HomePage from "./pages/HomePage.jsx";
+import InviteAcceptPage from "./pages/InviteAcceptPage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
+import UsersPage from "./pages/UsersPage.jsx";
 import AccountingLayout from "./pages/accounting/AccountingLayout.jsx";
 import BuyersTab from "./pages/accounting/BuyersTab.jsx";
 import InvoicesTab from "./pages/accounting/InvoicesTab.jsx";
@@ -21,7 +23,7 @@ import logoLight from "../assets/nlm_logo_light.png";
 
 function AppHeader() {
   const { theme } = useTheme();
-  const { user, logout, isAuthenticated } = useAuth();
+  const { user, logout, isAuthenticated, isCeo } = useAuth();
   const logoSrc = theme === "dark" ? logoLight : logoDark;
 
   async function handleLogout() {
@@ -52,6 +54,11 @@ function AppHeader() {
         <NavLink to="/sales" className={({ isActive }) => (isActive ? "nav-link nav-link--active" : "nav-link")}>
           Sales
         </NavLink>
+        {isCeo ? (
+          <NavLink to="/users" className={({ isActive }) => (isActive ? "nav-link nav-link--active" : "nav-link")}>
+            Users
+          </NavLink>
+        ) : null}
       </nav>
 
       <div className="topbar-right">
@@ -83,6 +90,8 @@ export default function App() {
   return (
     <Routes>
       {import.meta.env.DEV ? <Route path="/login" element={<LoginPage />} /> : null}
+      <Route path="/invite/:token" element={<InviteAcceptPage mode="invite" />} />
+      <Route path="/reset-password/:token" element={<InviteAcceptPage mode="password_reset" />} />
       <Route
         path="/"
         element={
@@ -133,6 +142,16 @@ export default function App() {
         <Route index element={<Navigate to="outreach" replace />} />
         <Route path="outreach" element={<OutreachSheetTab />} />
       </Route>
+      <Route
+        path="/users"
+        element={
+          <ProtectedRoute ceoOnly>
+            <AppLayout>
+              <UsersPage />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
       <Route path="/reconciliation" element={<Navigate to="/accounting/reconciliation" replace />} />
     </Routes>
   );
