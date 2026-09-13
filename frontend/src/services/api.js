@@ -114,6 +114,63 @@ export async function deleteBuyer(id) {
   return response.data;
 }
 
+export async function fetchOutreachProspects() {
+  const response = await api.get("/outreach");
+  return response.data;
+}
+
+export async function createOutreachProspect(payload) {
+  const response = await api.post("/outreach", payload);
+  return response.data;
+}
+
+export async function updateOutreachProspect(id, payload) {
+  const response = await api.put(`/outreach/${id}`, payload);
+  return response.data;
+}
+
+export async function deleteOutreachProspect(id) {
+  const response = await api.delete(`/outreach/${id}`);
+  return response.data;
+}
+
+export async function fetchPnLOverview(month) {
+  const response = await api.get("/accounting/pnl", {
+    params: { month: month || "" },
+  });
+  return response.data;
+}
+
+export async function fetchPnLHistorical() {
+  const response = await api.get("/accounting/pnl/historical");
+  return response.data;
+}
+
+export async function syncRingbaPnLBilling(monthsBack = 5) {
+  const response = await api.post("/accounting/pnl/sync-ringba", { monthsBack });
+  return response.data;
+}
+
+export async function importCompanyPnLExpenses() {
+  const response = await api.post("/accounting/pnl/import-company");
+  return response.data;
+}
+
+export async function createPnLExpense(payload) {
+  const response = await api.post("/accounting/pnl/expenses", payload);
+  return response.data;
+}
+
+export async function updatePnLExpense(id, payload) {
+  const response = await api.put(`/accounting/pnl/expenses/${id}`, payload);
+  return response.data;
+}
+
+export async function deletePnLExpense(id) {
+  const response = await api.delete(`/accounting/pnl/expenses/${id}`);
+  return response.data;
+}
+
 /** @deprecated Use createBuyer / updateBuyer */
 export async function saveBuyer(payload) {
   if (payload?.id) {

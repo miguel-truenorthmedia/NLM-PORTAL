@@ -4,14 +4,18 @@ import express from "express";
 import { config, hasAuthConfig, hasMongoConfig, hasQuickBooksConfig } from "./config.js";
 import { connectMongo } from "./db/mongo.js";
 import { migrateLegacySpendToMongo } from "./services/campaignSpendService.js";
+import { importCompanyExpenseSeed } from "./services/pnlService.js";
 import { requireAuth, requireAdmin } from "./middleware/authMiddleware.js";
 import { startCampaignSyncJob } from "./jobs/campaignSyncJob.js";
 import { startInvoiceAlertJob } from "./jobs/invoiceAlertJob.js";
 import { startReconciliationSyncJob } from "./jobs/reconciliationSyncJob.js";
+import { startRingbaBillingSyncJob } from "./jobs/ringbaBillingSyncJob.js";
 import authRoutes from "./routes/authRoutes.js";
 import buyerRoutes from "./routes/buyerRoutes.js";
 import campaignRoutes from "./routes/campaignRoutes.js";
 import invoiceAlertRoutes from "./routes/invoiceAlertRoutes.js";
+import outreachRoutes from "./routes/outreachRoutes.js";
+import pnlRoutes from "./routes/pnlRoutes.js";
 import reconciliationRoutes from "./routes/reconciliationRoutes.js";
 import syncRoutes from "./routes/syncRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
@@ -39,6 +43,8 @@ app.use("/api/users", userRoutes);
 app.use("/api/campaign", requireAuth, campaignRoutes);
 app.use("/api/reconciliation", requireAuth, reconciliationRoutes);
 app.use("/api/buyers", requireAuth, buyerRoutes);
+app.use("/api/outreach", requireAuth, outreachRoutes);
+app.use("/api/accounting/pnl", requireAuth, pnlRoutes);
 app.use("/api/accounting/invoice-alerts", requireAuth, requireAdmin, invoiceAlertRoutes);
 app.use("/api/sync", requireAuth, requireAdmin, syncRoutes);
 
@@ -71,8 +77,17 @@ async function start() {
     await connectMongo();
     await migrateLegacySpendToMongo();
     await ensureAdminUser();
+    try {
+      const seedResult = await importCompanyExpenseSeed({ name: "System", email: "system@nlm-portal" });
+      console.log(
+        `Company expense seed: imported ${seedResult.imported}, unchanged ${seedResult.unchanged}, skipped ${seedResult.skipped}`
+      );
+    } catch (error) {
+      console.warn("Company expense seed skipped:", error.message);
+    }
     startReconciliationSyncJob();
     startCampaignSyncJob();
+    startRingbaBillingSyncJob();
     startInvoiceAlertJob();
     console.log("MongoDB enabled — portal reads from database (Ringba sync on schedule)");
   } else {

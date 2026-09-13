@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import DateRangePicker from "../../components/DateRangePicker.jsx";
 import {
   deleteReconciliationCall,
   fetchReconciliation,
@@ -234,14 +235,17 @@ export default function ReconciliationTab() {
               ))}
             </select>
           </label>
-          <label>
-            From
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-          </label>
-          <label>
-            To
-            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-          </label>
+          <div className="filter-date-range">
+            <span className="filter-date-range-label">Date range</span>
+            <DateRangePicker
+              startDate={startDate}
+              endDate={endDate}
+              onChange={({ startDate: nextStart, endDate: nextEnd }) => {
+                setStartDate(nextStart);
+                setEndDate(nextEnd);
+              }}
+            />
+          </div>
         </div>
       </div>
 

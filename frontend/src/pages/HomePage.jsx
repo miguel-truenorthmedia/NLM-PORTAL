@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import DateRangePicker from "../components/DateRangePicker.jsx";
 import HomePerformanceChart from "../components/HomePerformanceChart.jsx";
 import KpiCards from "../components/KpiCards.jsx";
 import { formatDateRange } from "../components/formatters.js";
@@ -63,14 +64,14 @@ export default function HomePage() {
             {FE_CAMPAIGN_NAME} · {formatDateRange(startDate, endDate)}
           </p>
           <div className="home-date-filters">
-            <label>
-              From
-              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-            </label>
-            <label>
-              To
-              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-            </label>
+            <DateRangePicker
+              startDate={startDate}
+              endDate={endDate}
+              onChange={({ startDate: nextStart, endDate: nextEnd }) => {
+                setStartDate(nextStart);
+                setEndDate(nextEnd);
+              }}
+            />
           </div>
         </div>
         <div className="home-hero-badges">
@@ -79,9 +80,6 @@ export default function HomePage() {
         </div>
       </div>
 
-      {startDate > endDate ? (
-        <p className="error-text">Start date must be on or before end date.</p>
-      ) : null}
       {loading ? <p className="subtle">Loading campaign performance...</p> : null}
       <KpiCards items={summaryCards} />
       <HomePerformanceChart
@@ -107,6 +105,15 @@ export default function HomePage() {
           </p>
           <Link className="btn btn-inline btn-secondary" to="/accounting">
             Open Accounting
+          </Link>
+        </div>
+        <div className="card home-card">
+          <h3>Sales</h3>
+          <p className="subtle">
+            Outreach sheet for prospect buyers — track reach-outs, follow-ups, and who to contact next.
+          </p>
+          <Link className="btn btn-inline" to="/sales">
+            Open Sales
           </Link>
         </div>
       </div>

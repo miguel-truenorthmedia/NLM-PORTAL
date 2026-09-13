@@ -10,7 +10,11 @@ import LoginPage from "./pages/LoginPage.jsx";
 import AccountingLayout from "./pages/accounting/AccountingLayout.jsx";
 import BuyersTab from "./pages/accounting/BuyersTab.jsx";
 import InvoicesTab from "./pages/accounting/InvoicesTab.jsx";
+import PnLHistoricalTab from "./pages/accounting/PnLHistoricalTab.jsx";
+import PnLTab from "./pages/accounting/PnLTab.jsx";
 import ReconciliationTab from "./pages/accounting/ReconciliationTab.jsx";
+import SalesLayout from "./pages/sales/SalesLayout.jsx";
+import OutreachSheetTab from "./pages/sales/OutreachSheetTab.jsx";
 import { redirectToLogin } from "./utils/authRedirect.js";
 import logoDark from "../assets/nlm_logo_dark.png";
 import logoLight from "../assets/nlm_logo_light.png";
@@ -44,6 +48,9 @@ function AppHeader() {
           className={({ isActive }) => (isActive ? "nav-link nav-link--active" : "nav-link")}
         >
           Accounting
+        </NavLink>
+        <NavLink to="/sales" className={({ isActive }) => (isActive ? "nav-link nav-link--active" : "nav-link")}>
+          Sales
         </NavLink>
       </nav>
 
@@ -110,6 +117,21 @@ export default function App() {
         <Route path="reconciliation" element={<ReconciliationTab />} />
         <Route path="buyers" element={<BuyersTab />} />
         <Route path="invoices" element={<InvoicesTab />} />
+        <Route path="pnl" element={<PnLTab />} />
+        <Route path="pnl-historical" element={<PnLHistoricalTab />} />
+      </Route>
+      <Route
+        path="/sales"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <SalesLayout />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<Navigate to="outreach" replace />} />
+        <Route path="outreach" element={<OutreachSheetTab />} />
       </Route>
       <Route path="/reconciliation" element={<Navigate to="/accounting/reconciliation" replace />} />
     </Routes>

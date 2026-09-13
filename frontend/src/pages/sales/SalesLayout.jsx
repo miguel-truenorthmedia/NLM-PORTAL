@@ -1,24 +1,18 @@
 import { NavLink, Outlet } from "react-router-dom";
 
-const TABS = [
-  { to: "/accounting/reconciliation", label: "Reconciliation" },
-  { to: "/accounting/buyers", label: "Buyers" },
-  { to: "/accounting/invoices", label: "Invoices" },
-  { to: "/accounting/pnl", label: "P&L" },
-  { to: "/accounting/pnl-historical", label: "P&L Historical" },
-];
+const TABS = [{ to: "/sales/outreach", label: "Outreach Sheet" }];
 
-export default function AccountingLayout() {
+export default function SalesLayout() {
   return (
     <section className="accounting-section">
       <div className="page-header">
-        <h2>Accounting</h2>
+        <h2>Sales</h2>
         <p className="subtle">
-          Reconciliation, buyers, invoices, and P&amp;L — monthly and historical company performance in one place.
+          Prospect outreach and client acquisition tools — track who to contact, when you reached out, and follow-ups.
         </p>
       </div>
 
-      <nav className="accounting-tabs" aria-label="Accounting sections">
+      <nav className="accounting-tabs" aria-label="Sales sections">
         {TABS.map((tab) => (
           <NavLink
             key={tab.to}

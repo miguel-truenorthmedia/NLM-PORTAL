@@ -54,6 +54,7 @@ export function AuthProvider({ children }) {
       loading,
       isAuthenticated: Boolean(user),
       isAdmin: user?.role === "admin",
+      isCeo: String(user?.role || "").toLowerCase() === "ceo",
       login,
       logout,
       refreshUser: loadUser,

@@ -9,12 +9,15 @@ const EASTERN_TIME_ZONE = "America/New_York";
 
 /** Calendar date string (YYYY-MM-DD) in Eastern time. */
 export function toEasternDateString(date = new Date()) {
-  return new Intl.DateTimeFormat("en-CA", {
+  const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: EASTERN_TIME_ZONE,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(date);
+  }).formatToParts(date instanceof Date ? date : new Date(date));
+
+  const get = (type) => parts.find((part) => part.type === type)?.value || "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
 /** Shift an Eastern calendar YYYY-MM-DD by N days (calendar math, not UTC). */

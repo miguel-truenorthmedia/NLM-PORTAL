@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
+import DateRangePicker from "../components/DateRangePicker.jsx";
 import KpiCards from "../components/KpiCards.jsx";
 import CampaignTable from "../components/CampaignTable.jsx";
 import { fetchCampaignDaily, fetchFilterOptions, saveAdSpend } from "../services/api.js";
-import { getYesterdayDate } from "../utils/dateHelpers.js";
+import { getThisMonthRange } from "../utils/dateHelpers.js";
 
-const DEFAULT_START = "2026-06-28";
-const DEFAULT_END = getYesterdayDate();
+const DEFAULT_RANGE = getThisMonthRange();
+const DEFAULT_START = DEFAULT_RANGE.startDate;
+const DEFAULT_END = DEFAULT_RANGE.endDate;
 const DEFAULT_CAMPAIGN = "CAf073c253e2244171ac7c49a892f85299";
 const DEFAULT_AD_ACCOUNT = "franz-fe-1";
 
@@ -82,18 +84,25 @@ export default function CampaignDashboard() {
   }, [startDate, endDate, offerType, campaignId, adAccountId]);
 
   const summaryCards = useMemo(
-    () => [
-      { label: "Total Spend", value: data.summary.totalSpend, type: "currency" },
-      { label: "Total Revenue", value: data.summary.totalRevenue, type: "currency" },
-      { label: "Total Profit", value: data.summary.totalProfit, type: "currency" },
-      { label: "AVG ROI", value: data.summary.avgRoi, type: "percent" },
-      { label: "AVG Converted %", value: data.summary.avgConvertedPercent, type: "percent" },
-      {
-        label: "Period Converted %",
-        value: data.summary.periodConvertedPercent ?? data.summary.avgConvertedPercent,
-        type: "percent",
-      },
-    ],
+    () => {
+      const totalSpend = Number(data.summary.totalSpend) || 0;
+      const totalRevenue = Number(data.summary.totalRevenue) || 0;
+      const periodRoi = totalSpend > 0 ? ((totalRevenue - totalSpend) / totalSpend) * 100 : 0;
+
+      return [
+        { label: "Total Spend", value: data.summary.totalSpend, type: "currency" },
+        { label: "Total Revenue", value: data.summary.totalRevenue, type: "currency" },
+        { label: "Total Profit", value: data.summary.totalProfit, type: "currency" },
+        { label: "ROI", value: periodRoi, type: "percent" },
+        { label: "AVG ROI", value: data.summary.avgRoi, type: "percent" },
+        { label: "AVG Converted %", value: data.summary.avgConvertedPercent, type: "percent" },
+        {
+          label: "Period Converted %",
+          value: data.summary.periodConvertedPercent ?? data.summary.avgConvertedPercent,
+          type: "percent",
+        },
+      ];
+    },
     [data.summary]
   );
 
@@ -196,19 +205,22 @@ export default function CampaignDashboard() {
               ))}
             </select>
           </label>
-          <label>
-            From
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-          </label>
-          <label>
-            To
-            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-          </label>
+          <div className="filter-date-range">
+            <span className="filter-date-range-label">Date range</span>
+            <DateRangePicker
+              startDate={startDate}
+              endDate={endDate}
+              onChange={({ startDate: nextStart, endDate: nextEnd }) => {
+                setStartDate(nextStart);
+                setEndDate(nextEnd);
+              }}
+            />
+          </div>
         </div>
       </div>
 
       {loading ? <p className="subtle">Loading...</p> : null}
-      <KpiCards items={summaryCards} />
+      <KpiCards items={summaryCards} compact />
       <CampaignTable rows={data.rows} />
 
       {showSpendModal ? (
