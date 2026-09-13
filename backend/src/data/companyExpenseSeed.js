@@ -2,6 +2,7 @@
  * Company operating expenses (manual ledger).
  * Ringba rows are omitted — synced live from Ringba Billing API.
  * BIGO fund transfers are omitted — already counted as Campaign ad spend.
+ * Elijay / Natalia (HPMS) rows import as historicalOnly (special payouts — Historical only).
  */
 export const COMPANY_EXPENSE_SEED = [
   { date: "2025-09-14", platform: "Northwest Agent", details: "NLM - Business Formation", amount: 143, paymentMethod: "Metrobank CC - Dianne", receiptSaved: true },

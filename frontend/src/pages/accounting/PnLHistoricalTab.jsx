@@ -2,26 +2,47 @@ import { useEffect, useMemo, useState } from "react";
 import KpiCards from "../../components/KpiCards.jsx";
 import { PnLExpenseBreakdownChart, PnLTrendChart } from "../../components/PnLCharts.jsx";
 import { formatCurrency, formatPercent } from "../../components/formatters.js";
-import { fetchPnLHistorical } from "../../services/api.js";
+import { createPnLExpense, fetchPnLHistorical } from "../../services/api.js";
+
+const EMPTY_FORM = {
+  description: "",
+  amount: "",
+  category: "Other",
+  platform: "",
+  date: "",
+  paymentMethod: "",
+  notes: "",
+  /** "both" | "historical" */
+  visibility: "historical",
+};
 
 export default function PnLHistoricalTab() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [formError, setFormError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
+  const load = () => {
     setLoading(true);
     setError("");
-    fetchPnLHistorical()
+    return fetchPnLHistorical()
       .then(setData)
       .catch((err) => {
         setData(null);
         setError(err.response?.data?.error || err.message || "Failed to load historical P&L");
       })
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    load();
   }, []);
 
   const overall = data?.overall;
+  const categories = data?.meta?.categories || ["Other"];
 
   const kpiItems = useMemo(() => {
     if (!overall) return [];
@@ -57,6 +78,56 @@ export default function PnLHistoricalTab() {
       ? `${data.range.startDate} → ${data.range.endDate}`
       : "All available data";
 
+  const openAdd = () => {
+    setForm({ ...EMPTY_FORM, category: categories.includes("Contractors") ? "Contractors" : categories[0] || "Other" });
+    setFormError("");
+    setShowAdd(true);
+  };
+
+  const closeAdd = () => {
+    if (submitting) return;
+    setShowAdd(false);
+    setForm(EMPTY_FORM);
+    setFormError("");
+  };
+
+  const submitAdd = async (event) => {
+    event.preventDefault();
+    setFormError("");
+
+    const showOnBoth = form.visibility === "both";
+    const confirmed = window.confirm(
+      showOnBoth
+        ? "Show this expense on both monthly P&L and P&L Historical?\n\nOK to save on both tabs."
+        : "Show this expense on P&L Historical only (hidden from monthly P&L)?\n\nOK to save as Historical-only."
+    );
+    if (!confirmed) return;
+
+    setSubmitting(true);
+    try {
+      const date = String(form.date || "").trim();
+      const month = date ? date.slice(0, 7) : undefined;
+      await createPnLExpense({
+        month,
+        description: form.description,
+        amount: form.amount,
+        category: form.category,
+        platform: form.platform,
+        date,
+        paymentMethod: form.paymentMethod,
+        notes: form.notes,
+        source: "manual",
+        historicalOnly: !showOnBoth,
+      });
+      closeAdd();
+      await load();
+    } catch (err) {
+      setFormError(err.response?.data?.error || err.message || "Failed to add expense");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="pnl-page">
       <div className="section-head">
@@ -64,10 +135,15 @@ export default function PnLHistoricalTab() {
           <h3>P&amp;L Historical</h3>
           <p className="subtle">
             Overall company P&amp;L across all months — campaign profit minus operating expenses. Use the monthly P&amp;L
-            tab for period detail.
+            tab for period detail. Special payouts (e.g. Elijay) stay here only.
           </p>
         </div>
-        <div className="subtle">{rangeLabel}</div>
+        <div className="pnl-month-nav">
+          <div className="subtle">{rangeLabel}</div>
+          <button type="button" className="btn btn-inline" onClick={openAdd}>
+            Add expense
+          </button>
+        </div>
       </div>
 
       {error ? <p className="error-text">{error}</p> : null}
@@ -171,6 +247,122 @@ export default function PnLHistoricalTab() {
             </div>
           </div>
         </>
+      ) : null}
+
+      {showAdd ? (
+        <div className="modal-backdrop" role="presentation" onClick={closeAdd}>
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Add expense"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3>Add expense</h3>
+            <p className="subtle">
+              Special payouts (e.g. Elijay) should usually be Historical only so they do not hit monthly P&amp;L.
+            </p>
+            <form className="spend-form" onSubmit={submitAdd}>
+              <label>
+                Description
+                <input
+                  type="text"
+                  value={form.description}
+                  onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
+                  required
+                  autoFocus
+                />
+              </label>
+              <label>
+                Amount
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.amount}
+                  onChange={(e) => setForm((prev) => ({ ...prev, amount: e.target.value }))}
+                  required
+                />
+              </label>
+              <label>
+                Category
+                <select
+                  value={form.category}
+                  onChange={(e) => setForm((prev) => ({ ...prev, category: e.target.value }))}
+                >
+                  {categories.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Platform (optional)
+                <input
+                  type="text"
+                  value={form.platform}
+                  onChange={(e) => setForm((prev) => ({ ...prev, platform: e.target.value }))}
+                  placeholder="e.g. Elijay"
+                />
+              </label>
+              <label>
+                Date (optional)
+                <input
+                  type="date"
+                  value={form.date}
+                  onChange={(e) => setForm((prev) => ({ ...prev, date: e.target.value }))}
+                />
+              </label>
+              <label>
+                Payment method (optional)
+                <input
+                  type="text"
+                  value={form.paymentMethod}
+                  onChange={(e) => setForm((prev) => ({ ...prev, paymentMethod: e.target.value }))}
+                />
+              </label>
+              <label>
+                Notes (optional)
+                <input
+                  type="text"
+                  value={form.notes}
+                  onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
+                />
+              </label>
+              <fieldset className="pnl-visibility-fieldset">
+                <legend>Where should this appear?</legend>
+                <label className="pnl-visibility-option">
+                  <input
+                    type="radio"
+                    name="visibility"
+                    checked={form.visibility === "historical"}
+                    onChange={() => setForm((prev) => ({ ...prev, visibility: "historical" }))}
+                  />
+                  <span>P&amp;L Historical only</span>
+                </label>
+                <label className="pnl-visibility-option">
+                  <input
+                    type="radio"
+                    name="visibility"
+                    checked={form.visibility === "both"}
+                    onChange={() => setForm((prev) => ({ ...prev, visibility: "both" }))}
+                  />
+                  <span>Both monthly P&amp;L and P&amp;L Historical</span>
+                </label>
+              </fieldset>
+              {formError ? <p className="error-text">{formError}</p> : null}
+              <div className="modal-actions">
+                <button type="button" className="preset" onClick={closeAdd} disabled={submitting}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-inline" disabled={submitting}>
+                  {submitting ? "Saving..." : "Save expense"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       ) : null}
     </div>
   );

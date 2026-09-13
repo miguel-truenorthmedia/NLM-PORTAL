@@ -593,9 +593,19 @@ export async function importCompanyExpenseSeed(user) {
       continue;
     }
 
+    // Elijay / special contractor payouts stay on Historical only — not monthly P&L
+    const historicalOnly = /elijay/i.test(platform) || /natalia\s*\(hpms\)/i.test(description);
+
     const existing = await PnLExpense.findOne({ source: "import", externalId });
     if (existing) {
-      unchanged += 1;
+      if (historicalOnly && !existing.historicalOnly) {
+        existing.historicalOnly = true;
+        existing.updatedBy = actor;
+        await existing.save();
+        imported += 1;
+      } else {
+        unchanged += 1;
+      }
       continue;
     }
 
@@ -610,6 +620,7 @@ export async function importCompanyExpenseSeed(user) {
       receiptSaved: Boolean(row.receiptSaved),
       source: "import",
       externalId,
+      historicalOnly,
       notes: "",
       createdBy: actor,
       updatedBy: actor,
