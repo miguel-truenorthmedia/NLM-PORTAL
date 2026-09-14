@@ -4,7 +4,7 @@
  */
 export const PERMANENT_BLOCKED_NUMBERS = [
   "+14243542255",
-  // Add the second permanent number here when you have it.
+  "+15122901700",
 ];
 
 /** Digits-only compare key (handles formatting differences). */
