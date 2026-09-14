@@ -140,7 +140,8 @@ export default function App() {
         }
       >
         <Route index element={<Navigate to="outreach" replace />} />
-        <Route path="outreach" element={<OutreachSheetTab />} />
+        <Route path="outreach" element={<OutreachSheetTab mode="active" />} />
+        <Route path="archive" element={<OutreachSheetTab mode="archived" />} />
       </Route>
       <Route
         path="/users"

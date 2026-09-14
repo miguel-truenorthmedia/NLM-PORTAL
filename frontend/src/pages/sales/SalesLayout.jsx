@@ -1,6 +1,9 @@
 import { NavLink, Outlet } from "react-router-dom";
 
-const TABS = [{ to: "/sales/outreach", label: "Outreach Sheet" }];
+const TABS = [
+  { to: "/sales/outreach", label: "Outreach Sheet" },
+  { to: "/sales/archive", label: "Archive" },
+];
 
 export default function SalesLayout() {
   return (
@@ -8,7 +11,7 @@ export default function SalesLayout() {
       <div className="page-header">
         <h2>Sales</h2>
         <p className="subtle">
-          Prospect outreach and client acquisition tools — track who to contact, when you reached out, and follow-ups.
+          Prospect outreach and client acquisition — track contact method, status, notes, and archived leads.
         </p>
       </div>
 

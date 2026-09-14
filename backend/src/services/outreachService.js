@@ -1,10 +1,12 @@
 import { hasMongoConfig } from "../config.js";
 import {
+  DEFAULT_FOLLOW_UP_STATUS,
   FOLLOW_UP_STATUSES,
   OutreachProspect,
   REACH_OUT_STATUSES,
 } from "../models/OutreachProspect.js";
 import { toEasternDateString } from "../utils/dateRange.js";
+import { notifyOutreachSlack } from "./slackService.js";
 
 function requireMongo() {
   if (!hasMongoConfig) {
@@ -21,10 +23,12 @@ function actorFromUser(user) {
   };
 }
 
+function actorLabel(actor = {}) {
+  return actor.name || actor.email || "Someone";
+}
+
 function normalizeEmails(input) {
-  const raw = Array.isArray(input)
-    ? input.join(" ")
-    : String(input || "");
+  const raw = Array.isArray(input) ? input.join(" ") : String(input || "");
   const parts = raw
     .split(/[\s,;|]+/)
     .map((part) => part.trim().toLowerCase())
@@ -38,17 +42,54 @@ function normalizeEmails(input) {
   return unique;
 }
 
+function normalizeFormFillUrl(input) {
+  const value = String(input || "").trim();
+  if (!value) return "";
+  if (!/^https?:\/\//i.test(value)) {
+    return `https://${value}`;
+  }
+  return value;
+}
+
+function migrateLegacyFields(doc) {
+  let changed = false;
+  if (doc.reachOutStatus === "Emailed") {
+    doc.reachOutStatus = "Email";
+    changed = true;
+  }
+  if (doc.followUpStatus === "Responded") {
+    doc.followUpStatus = "Currently in communication";
+    changed = true;
+  }
+  return changed;
+}
+
+function normalizeNote(note) {
+  return {
+    id: String(note._id || note.id || ""),
+    text: note.text || "",
+    createdBy: note.createdBy || { userId: "", name: "", email: "" },
+    createdAt: note.createdAt || null,
+  };
+}
+
 function normalizeProspect(doc) {
   return {
     id: String(doc._id),
     companyName: doc.companyName || "",
     emails: Array.isArray(doc.emails) ? doc.emails : [],
+    formFillUrl: doc.formFillUrl || "",
     nlm: doc.nlm || "",
     dateAdded: doc.dateAdded || "",
     dateReachOut: doc.dateReachOut || "",
     reachOutStatus: doc.reachOutStatus || "",
     dateFollowUp: doc.dateFollowUp || "",
     followUpStatus: doc.followUpStatus || "",
+    notes: Array.isArray(doc.notes) ? doc.notes.map(normalizeNote) : [],
+    noteCount: Array.isArray(doc.notes) ? doc.notes.length : 0,
+    archived: Boolean(doc.archived),
+    archivedAt: doc.archivedAt || null,
+    archivedBy: doc.archivedBy || { userId: "", name: "", email: "" },
     createdBy: doc.createdBy || { userId: "", name: "", email: "" },
     updatedBy: doc.updatedBy || { userId: "", name: "", email: "" },
     lastEditedAt: doc.lastEditedAt || doc.updatedAt || null,
@@ -93,12 +134,15 @@ async function ensureSeeded(actor) {
   const docs = SEED_ROWS.map((row) => ({
     companyName: row.companyName,
     emails: row.emails,
+    formFillUrl: "",
     nlm: "",
     dateAdded: row.dateAdded || today,
     dateReachOut: "",
     reachOutStatus: "",
     dateFollowUp: "",
     followUpStatus: "",
+    notes: [],
+    archived: false,
     createdBy: actor,
     updatedBy: actor,
     lastEditedAt: new Date(),
@@ -106,16 +150,38 @@ async function ensureSeeded(actor) {
   await OutreachProspect.insertMany(docs);
 }
 
-export async function listOutreachProspects(user) {
+async function migrateLegacyProspects() {
+  const legacy = await OutreachProspect.find({
+    $or: [{ reachOutStatus: "Emailed" }, { followUpStatus: "Responded" }],
+  });
+  for (const doc of legacy) {
+    if (migrateLegacyFields(doc)) {
+      await doc.save();
+    }
+  }
+}
+
+function metaPayload() {
+  return {
+    reachOutStatuses: REACH_OUT_STATUSES,
+    followUpStatuses: FOLLOW_UP_STATUSES,
+    defaultFollowUpStatus: DEFAULT_FOLLOW_UP_STATUS,
+  };
+}
+
+export async function listOutreachProspects(user, { archived = false } = {}) {
   requireMongo();
   await ensureSeeded(actorFromUser(user));
-  const rows = await OutreachProspect.find().sort({ dateAdded: -1, companyName: 1 }).lean();
+  await migrateLegacyProspects();
+  const query = archived
+    ? { archived: true }
+    : { $or: [{ archived: false }, { archived: { $exists: false } }] };
+  const rows = await OutreachProspect.find(query)
+    .sort({ dateAdded: -1, companyName: 1 })
+    .lean();
   return {
     prospects: rows.map(normalizeProspect),
-    meta: {
-      reachOutStatuses: REACH_OUT_STATUSES,
-      followUpStatuses: FOLLOW_UP_STATUSES,
-    },
+    meta: metaPayload(),
   };
 }
 
@@ -128,21 +194,30 @@ export async function createOutreachProspect(body, user) {
   const emails = normalizeEmails(body.emails ?? body.email);
   if (!emails.length) throw new Error("At least one email is required");
 
+  const formFillUrl = normalizeFormFillUrl(body.formFillUrl);
+
   const created = await OutreachProspect.create({
     companyName,
     emails,
+    formFillUrl,
     nlm: String(body.nlm || "").trim(),
     dateAdded: toEasternDateString(),
     dateReachOut: "",
     reachOutStatus: "",
     dateFollowUp: "",
     followUpStatus: "",
+    notes: [],
+    archived: false,
     createdBy: actor,
     updatedBy: actor,
     lastEditedAt: new Date(),
   });
 
-  return normalizeProspect(created.toObject());
+  const prospect = normalizeProspect(created.toObject());
+  void notifyOutreachSlack(
+    `🟢 *New prospect added*\n*${prospect.companyName}* · ${prospect.emails.join(", ")}\nby ${actorLabel(actor)}`
+  );
+  return prospect;
 }
 
 export async function updateOutreachProspect(id, body, user) {
@@ -150,22 +225,41 @@ export async function updateOutreachProspect(id, body, user) {
   const actor = actorFromUser(user);
   const existing = await OutreachProspect.findById(id);
   if (!existing) throw new Error("Prospect not found");
+  migrateLegacyFields(existing);
 
   const today = toEasternDateString();
+  const changes = [];
   let touched = false;
 
   if (body.companyName !== undefined) {
     const companyName = String(body.companyName || "").trim();
     if (!companyName) throw new Error("Company name is required");
-    existing.companyName = companyName;
-    touched = true;
+    if (companyName !== existing.companyName) {
+      changes.push(`company → ${companyName}`);
+      existing.companyName = companyName;
+      touched = true;
+    }
   }
 
   if (body.emails !== undefined || body.email !== undefined) {
     const emails = normalizeEmails(body.emails ?? body.email);
     if (!emails.length) throw new Error("At least one email is required");
-    existing.emails = emails;
-    touched = true;
+    const prev = (existing.emails || []).join(", ");
+    const next = emails.join(", ");
+    if (prev !== next) {
+      changes.push(`email → ${next}`);
+      existing.emails = emails;
+      touched = true;
+    }
+  }
+
+  if (body.formFillUrl !== undefined) {
+    const formFillUrl = normalizeFormFillUrl(body.formFillUrl);
+    if (formFillUrl !== (existing.formFillUrl || "")) {
+      changes.push(formFillUrl ? "form fill URL updated" : "form fill URL cleared");
+      existing.formFillUrl = formFillUrl;
+      touched = true;
+    }
   }
 
   if (body.nlm !== undefined) {
@@ -173,52 +267,81 @@ export async function updateOutreachProspect(id, body, user) {
     touched = true;
   }
 
+  if (body.archived !== undefined) {
+    const nextArchived = Boolean(body.archived);
+    if (nextArchived !== Boolean(existing.archived)) {
+      existing.archived = nextArchived;
+      if (nextArchived) {
+        existing.archivedAt = new Date();
+        existing.archivedBy = actor;
+        changes.push("archived (not interested)");
+      } else {
+        existing.archivedAt = null;
+        existing.archivedBy = { userId: "", name: "", email: "" };
+        changes.push("restored from archive");
+      }
+      touched = true;
+    }
+  }
+
   if (body.reachOutStatus !== undefined) {
-    const next = String(body.reachOutStatus || "").trim();
+    let next = String(body.reachOutStatus || "").trim();
+    if (next === "Emailed") next = "Email";
     if (next && !REACH_OUT_STATUSES.includes(next)) {
-      throw new Error(`Invalid reach-out status. Allowed: ${REACH_OUT_STATUSES.join(", ")}`);
+      throw new Error(`Invalid outreach method. Allowed: ${REACH_OUT_STATUSES.join(", ")}`);
     }
     const prev = existing.reachOutStatus || "";
-    // First click is open to anyone; only CEO can change/clear after it's set
-    if (prev && next !== prev && String(user?.role || "").toLowerCase() !== "ceo") {
-      throw new Error("Only CEO can update outreach after it has been set");
+
+    if (prev && !next && String(user?.role || "").toLowerCase() !== "ceo") {
+      throw new Error("Only CEO can reset outreach to default");
     }
-    existing.reachOutStatus = next;
-    // Auto-stamp reach-out date the first time a real status is set
-    if (next && !prev) {
-      existing.dateReachOut = today;
-      // Default status after first email outreach
-      if (!existing.followUpStatus) {
-        existing.followUpStatus = "No response";
-        existing.dateFollowUp = today;
+
+    if (next === "Form Fill" && !normalizeFormFillUrl(body.formFillUrl ?? existing.formFillUrl)) {
+      throw new Error("Form Fill URL is required when outreach method is Form Fill");
+    }
+
+    if (next !== prev) {
+      existing.reachOutStatus = next;
+      if (next && !prev) {
+        existing.dateReachOut = today;
+        if (!existing.followUpStatus) {
+          existing.followUpStatus = DEFAULT_FOLLOW_UP_STATUS;
+          existing.dateFollowUp = today;
+        }
+        changes.push(`outreach logged: ${next}`);
+      } else if (!next) {
+        existing.dateReachOut = "";
+        existing.followUpStatus = "";
+        existing.dateFollowUp = "";
+        changes.push("outreach reset to default");
+      } else {
+        changes.push(`outreach → ${next}`);
       }
+      touched = true;
     }
-    // Clearing outreach also clears follow-up (no outreach = no follow-up)
-    if (!next) {
-      existing.dateReachOut = "";
-      existing.followUpStatus = "";
-      existing.dateFollowUp = "";
-    }
-    touched = true;
   }
 
   if (body.followUpStatus !== undefined) {
     if (!existing.reachOutStatus) {
-      throw new Error("Set initial outreach status before follow-up");
+      throw new Error("Log outreach before setting status");
     }
-    const next = String(body.followUpStatus || "").trim();
+    let next = String(body.followUpStatus || "").trim();
+    if (next === "Responded") next = "Currently in communication";
     if (next && !FOLLOW_UP_STATUSES.includes(next)) {
-      throw new Error(`Invalid follow-up status. Allowed: ${FOLLOW_UP_STATUSES.join(", ")}`);
+      throw new Error(`Invalid status. Allowed: ${FOLLOW_UP_STATUSES.join(", ")}`);
     }
     const prev = existing.followUpStatus || "";
-    existing.followUpStatus = next;
-    if (next && !prev) {
-      existing.dateFollowUp = today;
+    if (next !== prev) {
+      existing.followUpStatus = next;
+      if (next && !prev) {
+        existing.dateFollowUp = today;
+      }
+      if (!next) {
+        existing.dateFollowUp = "";
+      }
+      changes.push(`status → ${next || "(cleared)"}`);
+      touched = true;
     }
-    if (!next) {
-      existing.dateFollowUp = "";
-    }
-    touched = true;
   }
 
   if (!touched) {
@@ -228,7 +351,39 @@ export async function updateOutreachProspect(id, body, user) {
   existing.updatedBy = actor;
   existing.lastEditedAt = new Date();
   await existing.save();
-  return normalizeProspect(existing.toObject());
+
+  const prospect = normalizeProspect(existing.toObject());
+  if (changes.length) {
+    void notifyOutreachSlack(
+      `📣 *Outreach update* — *${prospect.companyName}*\n${changes.map((c) => `• ${c}`).join("\n")}\nby ${actorLabel(actor)}`
+    );
+  }
+  return prospect;
+}
+
+export async function addOutreachNote(id, body, user) {
+  requireMongo();
+  const actor = actorFromUser(user);
+  const text = String(body.text || body.note || "").trim();
+  if (!text) throw new Error("Note text is required");
+
+  const existing = await OutreachProspect.findById(id);
+  if (!existing) throw new Error("Prospect not found");
+
+  existing.notes.push({
+    text,
+    createdBy: actor,
+    createdAt: new Date(),
+  });
+  existing.updatedBy = actor;
+  existing.lastEditedAt = new Date();
+  await existing.save();
+
+  const prospect = normalizeProspect(existing.toObject());
+  void notifyOutreachSlack(
+    `📝 *Note added* — *${prospect.companyName}*\n>${text.slice(0, 280)}${text.length > 280 ? "…" : ""}\nby ${actorLabel(actor)}`
+  );
+  return prospect;
 }
 
 export async function deleteOutreachProspect(id) {

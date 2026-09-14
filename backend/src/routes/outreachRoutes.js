@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  addOutreachNote,
   createOutreachProspect,
   deleteOutreachProspect,
   listOutreachProspects,
@@ -15,8 +16,9 @@ function statusForError(message = "") {
     message.includes("required") ||
     message.includes("Invalid") ||
     message.includes("invalid") ||
-    message.includes("before follow-up") ||
-    message.includes("Allowed")
+    message.includes("before") ||
+    message.includes("Allowed") ||
+    message.includes("Log outreach")
   ) {
     return 400;
   }
@@ -25,7 +27,11 @@ function statusForError(message = "") {
 
 router.get("/", async (req, res) => {
   try {
-    const result = await listOutreachProspects(req.user);
+    const archived =
+      req.query.archived === "1" ||
+      req.query.archived === "true" ||
+      req.query.view === "archive";
+    const result = await listOutreachProspects(req.user, { archived });
     res.json(result);
   } catch (error) {
     res.status(statusForError(error.message)).json({ error: error.message });
@@ -35,6 +41,15 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     const prospect = await createOutreachProspect(req.body || {}, req.user);
+    res.status(201).json({ prospect });
+  } catch (error) {
+    res.status(statusForError(error.message)).json({ error: error.message });
+  }
+});
+
+router.post("/:id/notes", async (req, res) => {
+  try {
+    const prospect = await addOutreachNote(req.params.id, req.body || {}, req.user);
     res.status(201).json({ prospect });
   } catch (error) {
     res.status(statusForError(error.message)).json({ error: error.message });

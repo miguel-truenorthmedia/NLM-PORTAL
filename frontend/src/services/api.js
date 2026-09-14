@@ -114,8 +114,10 @@ export async function deleteBuyer(id) {
   return response.data;
 }
 
-export async function fetchOutreachProspects() {
-  const response = await api.get("/outreach");
+export async function fetchOutreachProspects({ archived = false } = {}) {
+  const response = await api.get("/outreach", {
+    params: archived ? { archived: true } : undefined,
+  });
   return response.data;
 }
 
@@ -126,6 +128,11 @@ export async function createOutreachProspect(payload) {
 
 export async function updateOutreachProspect(id, payload) {
   const response = await api.put(`/outreach/${id}`, payload);
+  return response.data;
+}
+
+export async function addOutreachNote(id, payload) {
+  const response = await api.post(`/outreach/${id}/notes`, payload);
   return response.data;
 }
 
