@@ -9,7 +9,9 @@
     "blocker": "node ringbaNumberBlocker.js",
     "blocker:dry": "node runBlockerDry.js",
     "blocked-reset": "node ringbaBlockedNumberReset.js",
-    "blocked-reset:dry": "node ringbaBlockedNumberReset.js --dry-run"
+    "blocked-reset:dry": "node ringbaBlockedNumberReset.js --dry-run",
+    "drop-rate": "node nlmDropRate.js --force",
+    "drop-rate:dry": "node nlmDropRate.js --force --dry-run"
   },
   "dependencies": {
     "axios": "^1.11.0",
