@@ -141,6 +141,28 @@ export async function deleteOutreachProspect(id) {
   return response.data;
 }
 
+export async function fetchTodos({ archived = false } = {}) {
+  const response = await api.get("/todos", {
+    params: archived ? { archived: true } : undefined,
+  });
+  return response.data;
+}
+
+export async function createTodo(payload) {
+  const response = await api.post("/todos", payload);
+  return response.data;
+}
+
+export async function updateTodo(id, payload) {
+  const response = await api.put(`/todos/${id}`, payload);
+  return response.data;
+}
+
+export async function deleteTodo(id) {
+  const response = await api.delete(`/todos/${id}`);
+  return response.data;
+}
+
 export async function fetchPnLOverview(month) {
   const response = await api.get("/accounting/pnl", {
     params: { month: month || "" },

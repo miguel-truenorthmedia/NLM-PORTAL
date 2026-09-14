@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 import { clearAuthToken, fetchCurrentUser, getAuthToken, loginUser, logoutUser, setAuthToken } from "../services/authApi.js";
+import { isTodoOwner } from "../utils/todoOwner.js";
 
 const AuthContext = createContext(null);
 
@@ -55,6 +56,7 @@ export function AuthProvider({ children }) {
       isAuthenticated: Boolean(user),
       isAdmin: user?.role === "admin",
       isCeo: String(user?.role || "").toLowerCase() === "ceo",
+      canAccessTodo: isTodoOwner(user),
       login,
       logout,
       refreshUser: loadUser,

@@ -17,13 +17,16 @@ import PnLTab from "./pages/accounting/PnLTab.jsx";
 import ReconciliationTab from "./pages/accounting/ReconciliationTab.jsx";
 import SalesLayout from "./pages/sales/SalesLayout.jsx";
 import OutreachSheetTab from "./pages/sales/OutreachSheetTab.jsx";
+import TodoLayout from "./pages/todo/TodoLayout.jsx";
+import TodoSheetTab from "./pages/todo/TodoSheetTab.jsx";
+import SopPage from "./pages/SopPage.jsx";
 import { redirectToLogin } from "./utils/authRedirect.js";
 import logoDark from "../assets/nlm_logo_dark.png";
 import logoLight from "../assets/nlm_logo_light.png";
 
 function AppHeader() {
   const { theme } = useTheme();
-  const { user, logout, isAuthenticated, isCeo } = useAuth();
+  const { user, logout, isAuthenticated, isCeo, canAccessTodo } = useAuth();
   const logoSrc = theme === "dark" ? logoLight : logoDark;
 
   async function handleLogout() {
@@ -54,6 +57,14 @@ function AppHeader() {
         <NavLink to="/sales" className={({ isActive }) => (isActive ? "nav-link nav-link--active" : "nav-link")}>
           Sales
         </NavLink>
+        <NavLink to="/sop" className={({ isActive }) => (isActive ? "nav-link nav-link--active" : "nav-link")}>
+          SOP
+        </NavLink>
+        {canAccessTodo ? (
+          <NavLink to="/todo" className={({ isActive }) => (isActive ? "nav-link nav-link--active" : "nav-link")}>
+            Todo
+          </NavLink>
+        ) : null}
         {isCeo ? (
           <NavLink to="/users" className={({ isActive }) => (isActive ? "nav-link nav-link--active" : "nav-link")}>
             Users
@@ -142,6 +153,29 @@ export default function App() {
         <Route index element={<Navigate to="outreach" replace />} />
         <Route path="outreach" element={<OutreachSheetTab mode="active" />} />
         <Route path="archive" element={<OutreachSheetTab mode="archived" />} />
+      </Route>
+      <Route
+        path="/sop"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <SopPage />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/todo"
+        element={
+          <ProtectedRoute todoOwnerOnly>
+            <AppLayout>
+              <TodoLayout />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<TodoSheetTab mode="active" />} />
+        <Route path="archive" element={<TodoSheetTab mode="archived" />} />
       </Route>
       <Route
         path="/users"

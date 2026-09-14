@@ -3,8 +3,13 @@ import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { redirectToLogin } from "../utils/authRedirect.js";
 
-export default function ProtectedRoute({ children, adminOnly = false, ceoOnly = false }) {
-  const { user, loading, isAuthenticated, isCeo } = useAuth();
+export default function ProtectedRoute({
+  children,
+  adminOnly = false,
+  ceoOnly = false,
+  todoOwnerOnly = false,
+}) {
+  const { user, loading, isAuthenticated, isCeo, canAccessTodo } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -23,6 +28,10 @@ export default function ProtectedRoute({ children, adminOnly = false, ceoOnly = 
     const returnPath = `${window.location.pathname}${window.location.search}`;
     redirectToLogin(returnPath);
     return null;
+  }
+
+  if (todoOwnerOnly && !canAccessTodo) {
+    return <Navigate to="/" replace />;
   }
 
   if (ceoOnly && !isCeo) {

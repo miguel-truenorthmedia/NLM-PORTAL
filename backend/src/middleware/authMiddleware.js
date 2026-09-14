@@ -1,4 +1,5 @@
 import { verifyToken, findUserById, sanitizeUser } from "../services/authService.js";
+import { isTodoOwner } from "../utils/todoOwner.js";
 
 function getBearerToken(req) {
   const header = req.headers.authorization || "";
@@ -37,6 +38,14 @@ export function requireAdmin(req, res, next) {
 export function requireCeo(req, res, next) {
   if (!req.user || String(req.user.role || "").toLowerCase() !== "ceo") {
     return res.status(403).json({ error: "CEO access required" });
+  }
+  return next();
+}
+
+/** Personal Todo page — CEO whose name is Miguel only */
+export function requireTodoOwner(req, res, next) {
+  if (!isTodoOwner(req.user)) {
+    return res.status(403).json({ error: "Todo access denied" });
   }
   return next();
 }
