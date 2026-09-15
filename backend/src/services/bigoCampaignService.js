@@ -265,15 +265,15 @@ async function fetchRingbaAccountInsights({ dayYmd, publisherName, campaignName 
 }
 
 /**
- * Campaign-level Ringba metrics grouped by tag:User:Campaign Name.
- * BIGO campaign names (e.g. "Franz - Low Bid") match this tag 1:1.
+ * Campaign-level Ringba metrics grouped by landing-page tag User:bbg_camp_name.
+ * Falls back to User:Campaign Name for older traffic. BIGO campaign names match 1:1
+ * (e.g. "Franz - Low Bid").
  */
 async function fetchRingbaByCampaignTag({ dayYmd, publisherName, campaignName }) {
   if (!hasRingbaConfig) return new Map();
 
   const { reportStart, reportEnd } = etDayWindow(dayYmd);
   const filters = [];
-  // Scope to the BIGO account's Ringba publisher + offer campaign when known
   if (publisherName) {
     filters.push({
       column: "publisherName",
@@ -291,35 +291,36 @@ async function fetchRingbaByCampaignTag({ dayYmd, publisherName, campaignName })
     });
   }
 
-  const payload = {
-    reportStart,
-    reportEnd,
-    filters,
-    groupByColumns: [{ column: "tag:User:Campaign Name", displayName: "User:Campaign Name" }],
-    orderByColumns: [{ column: "callCount", direction: "desc" }],
-    valueColumns: [
-      { column: "callCount", aggregateFunction: null },
-      { column: "liveCallCount", aggregateFunction: null },
-      { column: "convertedCalls", aggregateFunction: null },
-      { column: "conversionAmount", aggregateFunction: null },
-      { column: "payoutAmount", aggregateFunction: null },
-    ],
-    formatPercentages: true,
-    formatTimeZone: "America/New_York",
-    formatTimespans: true,
-    generateRollups: true,
-    maxResultsPerGroup: 1000,
-  };
+  async function fetchGrouped(groupCol) {
+    const payload = {
+      reportStart,
+      reportEnd,
+      filters,
+      groupByColumns: [{ column: groupCol, displayName: groupCol }],
+      orderByColumns: [{ column: "callCount", direction: "desc" }],
+      valueColumns: [
+        { column: "callCount", aggregateFunction: null },
+        { column: "liveCallCount", aggregateFunction: null },
+        { column: "convertedCalls", aggregateFunction: null },
+        { column: "conversionAmount", aggregateFunction: null },
+        { column: "payoutAmount", aggregateFunction: null },
+      ],
+      formatPercentages: true,
+      formatTimeZone: "America/New_York",
+      formatTimespans: true,
+      generateRollups: true,
+      maxResultsPerGroup: 1000,
+    };
+    const data = await ringbaPost("/insights", payload);
+    return data?.report?.records || [];
+  }
 
-  const data = await ringbaPost("/insights", payload);
-  const records = data?.report?.records || [];
   const byName = new Map();
-
-  for (const row of records) {
-    const raw = String(row["tag:User:Campaign Name"] ?? "").trim();
+  const prefer = await fetchGrouped("tag:User:bbg_camp_name");
+  for (const row of prefer) {
+    const raw = String(row["tag:User:bbg_camp_name"] ?? "").trim();
     if (!raw || raw === "-no value-") continue;
-    const key = raw.toLowerCase();
-    byName.set(key, {
+    byName.set(raw.toLowerCase(), {
       name: raw,
       incomingCalls: parseNumber(row.callCount),
       revenue: parseNumber(row.conversionAmount),
@@ -327,12 +328,29 @@ async function fetchRingbaByCampaignTag({ dayYmd, publisherName, campaignName })
     });
   }
 
+  // Fill gaps only — do not overwrite bbg_* counts (those match Ringba UI).
+  if (!byName.size) {
+    const legacy = await fetchGrouped("tag:User:Campaign Name");
+    for (const row of legacy) {
+      const raw = String(row["tag:User:Campaign Name"] ?? "").trim();
+      if (!raw || raw === "-no value-") continue;
+      const key = raw.toLowerCase();
+      if (byName.has(key)) continue;
+      byName.set(key, {
+        name: raw,
+        incomingCalls: parseNumber(row.callCount),
+        revenue: parseNumber(row.conversionAmount),
+        payout: parseNumber(row.payoutAmount),
+      });
+    }
+  }
+
   return byName;
 }
 
 /**
- * Ad-group-level Ringba metrics grouped by tag:User:Ad group Name.
- * Matches BIGO ad set names (e.g. "B2-Copy1-1787662639").
+ * Ad-group-level Ringba metrics grouped by User:bbg_ad_group_name
+ * (fallback: User:Ad group Name). Matches BIGO ad set names.
  */
 async function fetchRingbaByAdGroupTag({ dayYmd, publisherName, campaignName }) {
   if (!hasRingbaConfig) return new Map();
@@ -356,40 +374,57 @@ async function fetchRingbaByAdGroupTag({ dayYmd, publisherName, campaignName }) 
     });
   }
 
-  const payload = {
-    reportStart,
-    reportEnd,
-    filters,
-    groupByColumns: [{ column: "tag:User:Ad group Name", displayName: "User:Ad group Name" }],
-    orderByColumns: [{ column: "callCount", direction: "desc" }],
-    valueColumns: [
-      { column: "callCount", aggregateFunction: null },
-      { column: "liveCallCount", aggregateFunction: null },
-      { column: "convertedCalls", aggregateFunction: null },
-      { column: "conversionAmount", aggregateFunction: null },
-      { column: "payoutAmount", aggregateFunction: null },
-    ],
-    formatPercentages: true,
-    formatTimeZone: "America/New_York",
-    formatTimespans: true,
-    generateRollups: true,
-    maxResultsPerGroup: 1000,
-  };
+  async function fetchGrouped(groupCol) {
+    const payload = {
+      reportStart,
+      reportEnd,
+      filters,
+      groupByColumns: [{ column: groupCol, displayName: groupCol }],
+      orderByColumns: [{ column: "callCount", direction: "desc" }],
+      valueColumns: [
+        { column: "callCount", aggregateFunction: null },
+        { column: "liveCallCount", aggregateFunction: null },
+        { column: "convertedCalls", aggregateFunction: null },
+        { column: "conversionAmount", aggregateFunction: null },
+        { column: "payoutAmount", aggregateFunction: null },
+      ],
+      formatPercentages: true,
+      formatTimeZone: "America/New_York",
+      formatTimespans: true,
+      generateRollups: true,
+      maxResultsPerGroup: 1000,
+    };
+    const data = await ringbaPost("/insights", payload);
+    return data?.report?.records || [];
+  }
 
-  const data = await ringbaPost("/insights", payload);
-  const records = data?.report?.records || [];
   const byName = new Map();
-
-  for (const row of records) {
-    const raw = String(row["tag:User:Ad group Name"] ?? "").trim();
+  const prefer = await fetchGrouped("tag:User:bbg_ad_group_name");
+  for (const row of prefer) {
+    const raw = String(row["tag:User:bbg_ad_group_name"] ?? "").trim();
     if (!raw || raw === "-no value-") continue;
-    const key = raw.toLowerCase();
-    byName.set(key, {
+    byName.set(raw.toLowerCase(), {
       name: raw,
       incomingCalls: parseNumber(row.callCount),
       revenue: parseNumber(row.conversionAmount),
       payout: parseNumber(row.payoutAmount),
     });
+  }
+
+  if (!byName.size) {
+    const legacy = await fetchGrouped("tag:User:Ad group Name");
+    for (const row of legacy) {
+      const raw = String(row["tag:User:Ad group Name"] ?? "").trim();
+      if (!raw || raw === "-no value-") continue;
+      const key = raw.toLowerCase();
+      if (byName.has(key)) continue;
+      byName.set(key, {
+        name: raw,
+        incomingCalls: parseNumber(row.callCount),
+        revenue: parseNumber(row.conversionAmount),
+        payout: parseNumber(row.payoutAmount),
+      });
+    }
   }
 
   return byName;
