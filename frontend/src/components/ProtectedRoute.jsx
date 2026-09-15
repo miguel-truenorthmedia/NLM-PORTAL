@@ -8,8 +8,9 @@ export default function ProtectedRoute({
   adminOnly = false,
   ceoOnly = false,
   todoOwnerOnly = false,
+  opsOnly = false,
 }) {
-  const { user, loading, isAuthenticated, isCeo, canAccessTodo } = useAuth();
+  const { user, loading, isAuthenticated, isCeo, canAccessTodo, canAccessOpsPages } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -28,6 +29,10 @@ export default function ProtectedRoute({
     const returnPath = `${window.location.pathname}${window.location.search}`;
     redirectToLogin(returnPath);
     return null;
+  }
+
+  if (opsOnly && !canAccessOpsPages) {
+    return <Navigate to="/" replace />;
   }
 
   if (todoOwnerOnly && !canAccessTodo) {

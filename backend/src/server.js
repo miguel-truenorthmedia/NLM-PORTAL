@@ -5,12 +5,15 @@ import { config, hasAuthConfig, hasMongoConfig, hasQuickBooksConfig } from "./co
 import { connectMongo } from "./db/mongo.js";
 import { migrateLegacySpendToMongo } from "./services/campaignSpendService.js";
 import { importCompanyExpenseSeed } from "./services/pnlService.js";
-import { requireAuth, requireAdmin, requireTodoOwner } from "./middleware/authMiddleware.js";
+import { requireAuth, requireAdmin, requireTodoOwner, forbidMediaBuyer } from "./middleware/authMiddleware.js";
+import { startBigoControllerSyncJob } from "./jobs/bigoControllerSyncJob.js";
 import { startCampaignSyncJob } from "./jobs/campaignSyncJob.js";
 import { startInvoiceAlertJob } from "./jobs/invoiceAlertJob.js";
 import { startReconciliationSyncJob } from "./jobs/reconciliationSyncJob.js";
 import { startRingbaBillingSyncJob } from "./jobs/ringbaBillingSyncJob.js";
+import { hasBigoAdsConfig } from "./services/bigoClient.js";
 import authRoutes from "./routes/authRoutes.js";
+import bigoRoutes from "./routes/bigoRoutes.js";
 import buyerRoutes from "./routes/buyerRoutes.js";
 import campaignRoutes from "./routes/campaignRoutes.js";
 import invoiceAlertRoutes from "./routes/invoiceAlertRoutes.js";
@@ -42,11 +45,12 @@ app.get("/api/health", (_req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/campaign", requireAuth, campaignRoutes);
-app.use("/api/reconciliation", requireAuth, reconciliationRoutes);
-app.use("/api/buyers", requireAuth, buyerRoutes);
-app.use("/api/outreach", requireAuth, outreachRoutes);
+app.use("/api/reconciliation", requireAuth, forbidMediaBuyer, reconciliationRoutes);
+app.use("/api/buyers", requireAuth, forbidMediaBuyer, buyerRoutes);
+app.use("/api/outreach", requireAuth, forbidMediaBuyer, outreachRoutes);
+app.use("/api/bigo", requireAuth, bigoRoutes);
 app.use("/api/todos", requireAuth, requireTodoOwner, todoRoutes);
-app.use("/api/accounting/pnl", requireAuth, pnlRoutes);
+app.use("/api/accounting/pnl", requireAuth, forbidMediaBuyer, pnlRoutes);
 app.use("/api/accounting/invoice-alerts", requireAuth, requireAdmin, invoiceAlertRoutes);
 app.use("/api/sync", requireAuth, requireAdmin, syncRoutes);
 
@@ -91,6 +95,9 @@ async function start() {
     startCampaignSyncJob();
     startRingbaBillingSyncJob();
     startInvoiceAlertJob();
+    if (hasBigoAdsConfig()) {
+      startBigoControllerSyncJob();
+    }
     console.log("MongoDB enabled — portal reads from database (Ringba sync on schedule)");
   } else {
     console.log("MongoDB disabled — portal reads live from Ringba");

@@ -152,7 +152,7 @@ export default function CampaignDashboard() {
     <section>
       <div className="section-head">
         <div>
-          <h2>Campaign Performance</h2>
+          <h3>Overview</h3>
           <p className="subtle">
             Ringba supplies calls and revenue. Ad spend comes from each ad account&apos;s traffic source (BIGO manual today; FB/Google via API later).
           </p>

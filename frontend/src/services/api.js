@@ -163,6 +163,67 @@ export async function deleteTodo(id) {
   return response.data;
 }
 
+export async function fetchBigoAccounts() {
+  const response = await api.get("/bigo/accounts");
+  return response.data;
+}
+
+export async function fetchBigoCampaigns(advertiserId) {
+  const response = await api.get("/bigo/campaigns", {
+    params: { advertiserId },
+  });
+  return response.data;
+}
+
+export async function fetchBigoTracked() {
+  const response = await api.get("/bigo/tracked");
+  return response.data;
+}
+
+export async function saveBigoTracked(campaigns) {
+  const response = await api.put("/bigo/tracked", { campaigns });
+  return response.data;
+}
+
+export async function fetchBigoControllerLive({ refresh = false } = {}) {
+  const response = await api.get("/bigo/controller-live", {
+    params: refresh ? { refresh: 1 } : undefined,
+  });
+  return response.data;
+}
+
+export async function setBigoAdsetPaused({ advertiserId, adsetId, paused }) {
+  const response = await api.post(`/bigo/adsets/${adsetId}/status`, {
+    advertiserId,
+    paused,
+  });
+  return response.data;
+}
+
+export async function updateBigoAdsetBidBudget({
+  advertiserId,
+  adsetId,
+  basicGoalBid,
+  budget,
+  budgetMode,
+}) {
+  const response = await api.post(`/bigo/adsets/${adsetId}/bid-budget`, {
+    advertiserId,
+    basicGoalBid,
+    budget,
+    budgetMode,
+  });
+  return response.data;
+}
+
+export async function setBigoCampaignPaused({ advertiserId, campaignId, paused }) {
+  const response = await api.post(`/bigo/campaigns/${campaignId}/status`, {
+    advertiserId,
+    paused,
+  });
+  return response.data;
+}
+
 export async function fetchPnLOverview(month) {
   const response = await api.get("/accounting/pnl", {
     params: { month: month || "" },

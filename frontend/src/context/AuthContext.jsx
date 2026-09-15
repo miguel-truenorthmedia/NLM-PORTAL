@@ -50,17 +50,24 @@ export function AuthProvider({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({
-      user,
-      loading,
-      isAuthenticated: Boolean(user),
-      isAdmin: user?.role === "admin",
-      isCeo: String(user?.role || "").toLowerCase() === "ceo",
-      canAccessTodo: isTodoOwner(user),
-      login,
-      logout,
-      refreshUser: loadUser,
-    }),
+    () => {
+      const role = String(user?.role || "").toLowerCase();
+      const isMediaBuyer = role === "media_buyer";
+      return {
+        user,
+        loading,
+        isAuthenticated: Boolean(user),
+        isAdmin: role === "admin",
+        isCeo: role === "ceo",
+        isMediaBuyer,
+        /** Accounting / Sales / Todo / Users — not for media buyers */
+        canAccessOpsPages: Boolean(user) && !isMediaBuyer,
+        canAccessTodo: isTodoOwner(user),
+        login,
+        logout,
+        refreshUser: loadUser,
+      };
+    },
     [user, loading, login, logout, loadUser]
   );
 

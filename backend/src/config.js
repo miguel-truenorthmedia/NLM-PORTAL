@@ -28,6 +28,11 @@ export const config = {
   slackInvoiceWebhookUrl: process.env.SLACK_INVOICE_WEBHOOK_URL || "",
   // Slack — Sales outreach sheet activity
   slackOutreachWebhookUrl: process.env.SLACK_OUTREACH_WEBHOOK_URL || "",
+  // BIGO Ads OpenAPI
+  bigoAdsClientId: process.env.BIGO_CLIENT_ID || "",
+  bigoAdsClientSecret: process.env.BIGO_CLIENT_SECRET || "",
+  bigoAdsAccessToken: process.env.BIGO_ACCESS_TOKEN || "",
+  bigoAdsRefreshToken: process.env.BIGO_REFRESH_TOKEN || "",
 };
 
 export const hasMongoConfig = Boolean(config.useMongoDb && config.mongoUri);

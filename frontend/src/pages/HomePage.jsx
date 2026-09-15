@@ -4,6 +4,7 @@ import DateRangePicker from "../components/DateRangePicker.jsx";
 import HomePerformanceChart from "../components/HomePerformanceChart.jsx";
 import KpiCards from "../components/KpiCards.jsx";
 import { formatDateRange } from "../components/formatters.js";
+import { useAuth } from "../context/AuthContext.jsx";
 import { fetchCampaignDaily } from "../services/api.js";
 import { aggregateRowsByDate, getDayCount, getLast7DaysRange } from "../utils/dateHelpers.js";
 
@@ -12,6 +13,7 @@ const FE_CAMPAIGN_NAME = "NLM - Final Expense";
 const defaultRange = getLast7DaysRange();
 
 export default function HomePage() {
+  const { canAccessOpsPages } = useAuth();
   const [startDate, setStartDate] = useState(defaultRange.startDate);
   const [endDate, setEndDate] = useState(defaultRange.endDate);
   const [loading, setLoading] = useState(true);
@@ -98,24 +100,29 @@ export default function HomePage() {
             Open Campaign Performance
           </Link>
         </div>
-        <div className="card home-card home-card-recon">
-          <h3>Accounting</h3>
-          <p className="subtle">
-            Reconciliation, buyer billing profiles, and invoices. Download weekly CSV reports and manage Net terms.
-          </p>
-          <Link className="btn btn-inline btn-secondary" to="/accounting">
-            Open Accounting
-          </Link>
-        </div>
-        <div className="card home-card">
-          <h3>Sales</h3>
-          <p className="subtle">
-            Outreach sheet for prospect buyers — track reach-outs, follow-ups, and who to contact next.
-          </p>
-          <Link className="btn btn-inline" to="/sales">
-            Open Sales
-          </Link>
-        </div>
+        {canAccessOpsPages ? (
+          <>
+            <div className="card home-card home-card-recon">
+              <h3>Accounting</h3>
+              <p className="subtle">
+                Reconciliation, buyer billing profiles, and invoices. Download weekly CSV reports and manage Net
+                terms.
+              </p>
+              <Link className="btn btn-inline btn-secondary" to="/accounting">
+                Open Accounting
+              </Link>
+            </div>
+            <div className="card home-card">
+              <h3>Sales</h3>
+              <p className="subtle">
+                Outreach sheet for prospect buyers — track reach-outs, follow-ups, and who to contact next.
+              </p>
+              <Link className="btn btn-inline" to="/sales">
+                Open Sales
+              </Link>
+            </div>
+          </>
+        ) : null}
       </div>
     </section>
   );

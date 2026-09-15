@@ -5,6 +5,8 @@ import ThemeToggle from "./components/ThemeToggle.jsx";
 import { useAuth } from "./context/AuthContext.jsx";
 import { useTheme } from "./context/ThemeContext.jsx";
 import CampaignDashboard from "./pages/CampaignDashboard.jsx";
+import CampaignsLayout from "./pages/campaigns/CampaignsLayout.jsx";
+import CampaignControllerTab from "./pages/campaigns/CampaignControllerTab.jsx";
 import HomePage from "./pages/HomePage.jsx";
 import InviteAcceptPage from "./pages/InviteAcceptPage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
@@ -26,7 +28,7 @@ import logoLight from "../assets/nlm_logo_light.png";
 
 function AppHeader() {
   const { theme } = useTheme();
-  const { user, logout, isAuthenticated, isCeo, canAccessTodo } = useAuth();
+  const { user, logout, isAuthenticated, isCeo, canAccessTodo, canAccessOpsPages } = useAuth();
   const logoSrc = theme === "dark" ? logoLight : logoDark;
 
   async function handleLogout() {
@@ -48,24 +50,28 @@ function AppHeader() {
         >
           Campaign Performance
         </NavLink>
-        <NavLink
-          to="/accounting"
-          className={({ isActive }) => (isActive ? "nav-link nav-link--active" : "nav-link")}
-        >
-          Accounting
-        </NavLink>
-        <NavLink to="/sales" className={({ isActive }) => (isActive ? "nav-link nav-link--active" : "nav-link")}>
-          Sales
-        </NavLink>
+        {canAccessOpsPages ? (
+          <NavLink
+            to="/accounting"
+            className={({ isActive }) => (isActive ? "nav-link nav-link--active" : "nav-link")}
+          >
+            Accounting
+          </NavLink>
+        ) : null}
+        {canAccessOpsPages ? (
+          <NavLink to="/sales" className={({ isActive }) => (isActive ? "nav-link nav-link--active" : "nav-link")}>
+            Sales
+          </NavLink>
+        ) : null}
         <NavLink to="/sop" className={({ isActive }) => (isActive ? "nav-link nav-link--active" : "nav-link")}>
           SOP
         </NavLink>
-        {canAccessTodo ? (
+        {canAccessOpsPages && canAccessTodo ? (
           <NavLink to="/todo" className={({ isActive }) => (isActive ? "nav-link nav-link--active" : "nav-link")}>
             Todo
           </NavLink>
         ) : null}
-        {isCeo ? (
+        {canAccessOpsPages && isCeo ? (
           <NavLink to="/users" className={({ isActive }) => (isActive ? "nav-link nav-link--active" : "nav-link")}>
             Users
           </NavLink>
@@ -118,15 +124,18 @@ export default function App() {
         element={
           <ProtectedRoute>
             <AppLayout>
-              <CampaignDashboard />
+              <CampaignsLayout />
             </AppLayout>
           </ProtectedRoute>
         }
-      />
+      >
+        <Route index element={<CampaignDashboard />} />
+        <Route path="controller" element={<CampaignControllerTab />} />
+      </Route>
       <Route
         path="/accounting"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute opsOnly>
             <AppLayout>
               <AccountingLayout />
             </AppLayout>
@@ -143,7 +152,7 @@ export default function App() {
       <Route
         path="/sales"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute opsOnly>
             <AppLayout>
               <SalesLayout />
             </AppLayout>

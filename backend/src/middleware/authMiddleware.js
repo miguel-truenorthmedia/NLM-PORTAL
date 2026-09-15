@@ -42,6 +42,14 @@ export function requireCeo(req, res, next) {
   return next();
 }
 
+/** Block media buyers from ops APIs (accounting / sales). */
+export function forbidMediaBuyer(req, res, next) {
+  if (String(req.user?.role || "").toLowerCase() === "media_buyer") {
+    return res.status(403).json({ error: "Access denied" });
+  }
+  return next();
+}
+
 /** Personal Todo page — CEO whose name is Miguel only */
 export function requireTodoOwner(req, res, next) {
   if (!isTodoOwner(req.user)) {
