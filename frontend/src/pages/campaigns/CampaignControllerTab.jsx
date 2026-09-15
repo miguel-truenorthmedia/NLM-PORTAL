@@ -80,13 +80,13 @@ function formatRoi(roi) {
   return `${sign}${n.toFixed(1)}%`;
 }
 
-/** Only show when metric rose vs previous 5-min snapshot. */
+/** Only show when metric rose vs the current 30-min movement baseline. */
 function MetricUpTrend({ deltaPct }) {
   const pct = Number(deltaPct);
   if (!Number.isFinite(pct) || pct <= 0) return null;
   const label = pct >= 10 ? pct.toFixed(0) : pct.toFixed(1);
   return (
-    <span className="bigo-metric-up" title={`Up ${label}% vs last refresh`}>
+    <span className="bigo-metric-up" title={`Up ${label}% vs half-hour baseline`}>
       <span className="bigo-metric-up-arrow" aria-hidden="true">
         ↑
       </span>

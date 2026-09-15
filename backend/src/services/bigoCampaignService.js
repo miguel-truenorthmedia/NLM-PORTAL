@@ -1,4 +1,5 @@
 import { hasMongoConfig, hasRingbaConfig } from "../config.js";
+import { BigoControllerBaseline } from "../models/BigoControllerBaseline.js";
 import { BigoControllerSnapshot } from "../models/BigoControllerSnapshot.js";
 import { BigoTrackedCampaign } from "../models/BigoTrackedCampaign.js";
 import { bigoListAll, bigoPost, hasBigoAdsConfig } from "./bigoClient.js";
@@ -993,13 +994,19 @@ async function saveControllerSnapshot(payload, error = "") {
         adsets: payload.adsets || [],
         fetchedAt,
         error: error || "",
+        movementBaselineAt: payload.movementBaselineAt
+          ? new Date(payload.movementBaselineAt)
+          : null,
+        movementWindowStart: payload.movementWindowStart
+          ? new Date(payload.movementWindowStart)
+          : null,
       },
     },
     { upsert: true }
   );
 }
 
-/** Percent change vs previous snapshot. Null when no usable baseline. */
+/** Percent change vs baseline. Null when no usable baseline. */
 function pctChange(prev, next) {
   const p = Number(prev);
   const n = Number(next);
@@ -1014,7 +1021,134 @@ function entityTrendKey(row, level) {
   return `${row.advertiserId || ""}::${row.id || ""}`;
 }
 
-/** Attach cost/cpc deltas vs the previous controller snapshot (5-min movement). */
+function slimMetricRows(rows, level) {
+  return (rows || []).map((row) => {
+    if (level === "account") {
+      return {
+        advertiserId: String(row.advertiserId || ""),
+        cost: Number(row.cost) || 0,
+        cpc: row.cpc == null ? null : Number(row.cpc),
+      };
+    }
+    if (level === "campaign") {
+      return {
+        advertiserId: String(row.advertiserId || ""),
+        campaignId: String(row.campaignId || ""),
+        cost: Number(row.cost) || 0,
+        cpc: row.cpc == null ? null : Number(row.cpc),
+      };
+    }
+    return {
+      advertiserId: String(row.advertiserId || ""),
+      id: String(row.id || ""),
+      cost: Number(row.cost) || 0,
+      cpc: row.cpc == null ? null : Number(row.cpc),
+    };
+  });
+}
+
+/**
+ * ET half-hour window start (e.g. 10:00 covers 10:00–10:29).
+ * Used only for movement arrows / future Slack alerts — not for live metrics.
+ */
+export function getEtHalfHourWindowStart(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+
+  const get = (type) => parts.find((p) => p.type === type)?.value;
+  const year = get("year");
+  const month = get("month");
+  const day = get("day");
+  let hour = get("hour");
+  const minute = Number(get("minute") || 0);
+  // Intl can return "24" for midnight in some engines
+  if (hour === "24") hour = "00";
+  const flooredMinute = minute < 30 ? "00" : "30";
+
+  // Build a UTC instant that corresponds to that ET local wall time via offset probe
+  const asUtcGuess = new Date(`${year}-${month}-${day}T${hour}:${flooredMinute}:00Z`);
+  const etProbe = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    timeZoneName: "shortOffset",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(asUtcGuess);
+  const tzName = etProbe.find((p) => p.type === "timeZoneName")?.value || "GMT-5";
+  const match = tzName.match(/GMT([+-]\d+)(?::(\d+))?/i);
+  let offsetMinutes = -5 * 60;
+  if (match) {
+    const hours = Number(match[1]);
+    const mins = Number(match[2] || 0);
+    offsetMinutes = hours * 60 + Math.sign(hours || 1) * mins;
+  }
+  // ET local = UTC + offset → UTC = local - offset
+  return new Date(asUtcGuess.getTime() - offsetMinutes * 60 * 1000);
+}
+
+async function getMovementBaseline() {
+  requireMongo();
+  const doc = await BigoControllerBaseline.findOne({ key: "default" }).lean();
+  if (!doc) {
+    return {
+      windowStart: null,
+      baselineAt: null,
+      accounts: [],
+      campaigns: [],
+      adsets: [],
+    };
+  }
+  return {
+    windowStart: doc.windowStart ? new Date(doc.windowStart) : null,
+    baselineAt: doc.baselineAt ? new Date(doc.baselineAt) : null,
+    accounts: doc.accounts || [],
+    campaigns: doc.campaigns || [],
+    adsets: doc.adsets || [],
+  };
+}
+
+/**
+ * Ensure we have a baseline for the current ET half-hour.
+ * Only writes when the window rolls (e.g. 10:00 → 10:30) or on first run.
+ * Live 5-min snapshot flow is unchanged.
+ */
+async function ensureMovementBaseline(live) {
+  requireMongo();
+  const windowStart = getEtHalfHourWindowStart();
+  const existing = await getMovementBaseline();
+  const sameWindow =
+    existing.windowStart &&
+    existing.windowStart.getTime() === windowStart.getTime() &&
+    (existing.accounts?.length || existing.campaigns?.length || existing.adsets?.length);
+
+  if (sameWindow) return existing;
+
+  const baselineAt = new Date();
+  const payload = {
+    windowStart,
+    baselineAt,
+    accounts: slimMetricRows(live.accounts, "account"),
+    campaigns: slimMetricRows(live.campaigns, "campaign"),
+    adsets: slimMetricRows(live.adsets, "adset"),
+  };
+
+  await BigoControllerBaseline.findOneAndUpdate(
+    { key: "default" },
+    { $set: payload },
+    { upsert: true }
+  );
+
+  return payload;
+}
+
+/** Attach cost/cpc deltas vs the 30-min movement baseline. */
 function attachMetricDeltas(nextRows, prevRows, level) {
   const prevMap = new Map();
   for (const row of prevRows || []) {
@@ -1043,6 +1177,8 @@ export async function getControllerSnapshot() {
       source: "snapshot",
       stale: true,
       error: "",
+      movementBaselineAt: null,
+      movementWindowStart: null,
     };
   }
   return {
@@ -1053,26 +1189,34 @@ export async function getControllerSnapshot() {
     source: "snapshot",
     stale: false,
     error: doc.error || "",
+    movementBaselineAt: doc.movementBaselineAt
+      ? new Date(doc.movementBaselineAt).toISOString()
+      : null,
+    movementWindowStart: doc.movementWindowStart
+      ? new Date(doc.movementWindowStart).toISOString()
+      : null,
   };
 }
 
 /**
  * Pull live from BIGO and persist snapshot (used by 5-min job + forced refresh).
+ * Movement arrows compare against the ET half-hour baseline (not the previous 5-min pull).
  */
 export async function syncControllerLive() {
   const live = await getControllerLive();
-  let prev = { accounts: [], campaigns: [], adsets: [] };
-  try {
-    prev = await getControllerSnapshot();
-  } catch {
-    /* first run — no prior snapshot */
-  }
+  const baseline = await ensureMovementBaseline(live);
 
   const withTrends = {
     ...live,
-    accounts: attachMetricDeltas(live.accounts, prev.accounts, "account"),
-    campaigns: attachMetricDeltas(live.campaigns, prev.campaigns, "campaign"),
-    adsets: attachMetricDeltas(live.adsets, prev.adsets, "adset"),
+    accounts: attachMetricDeltas(live.accounts, baseline.accounts, "account"),
+    campaigns: attachMetricDeltas(live.campaigns, baseline.campaigns, "campaign"),
+    adsets: attachMetricDeltas(live.adsets, baseline.adsets, "adset"),
+    movementBaselineAt: baseline.baselineAt
+      ? new Date(baseline.baselineAt).toISOString()
+      : null,
+    movementWindowStart: baseline.windowStart
+      ? new Date(baseline.windowStart).toISOString()
+      : null,
   };
 
   await saveControllerSnapshot(withTrends);
