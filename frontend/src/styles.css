@@ -1440,6 +1440,48 @@ th {
   margin-top: 0.4rem;
 }
 
+.outreach-company-field {
+  position: relative;
+}
+
+.outreach-company-suggest {
+  list-style: none;
+  margin: 0.3rem 0 0;
+  padding: 0.3rem;
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  max-height: 14rem;
+  overflow: auto;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.outreach-company-suggest button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  padding: 0.55rem 0.65rem;
+  border-radius: 7px;
+  font: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.outreach-company-suggest button:hover {
+  background: var(--surface-muted);
+}
+
+.outreach-company-suggest .subtle {
+  font-size: 0.78rem;
+}
+
 .modal-card--wide {
   width: min(640px, 100%);
 }

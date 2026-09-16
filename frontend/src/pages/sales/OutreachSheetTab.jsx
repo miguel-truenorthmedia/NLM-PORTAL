@@ -104,6 +104,9 @@ export default function OutreachSheetTab({ mode = "active" }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [companySuggestOpen, setCompanySuggestOpen] = useState(false);
+  const [matchPool, setMatchPool] = useState([]);
+  const companyFieldRef = useRef(null);
 
   const [notesRow, setNotesRow] = useState(null);
   const [noteText, setNoteText] = useState("");
@@ -149,6 +152,31 @@ export default function OutreachSheetTab({ mode = "active" }) {
     });
   }, [rows, search]);
 
+  const companyMatches = useMemo(() => {
+    const needle = form.companyName.trim().toLowerCase();
+    if (!needle || needle.length < 1) return [];
+    const pool = matchPool.length ? matchPool : rows;
+    return pool
+      .filter((row) => {
+        if (editingRow?.id && row.id === editingRow.id) return false;
+        return String(row.companyName || "")
+          .toLowerCase()
+          .includes(needle);
+      })
+      .slice(0, 8);
+  }, [form.companyName, matchPool, rows, editingRow]);
+
+  useEffect(() => {
+    if (!showAdd || !companySuggestOpen) return undefined;
+    const onDoc = (event) => {
+      if (companyFieldRef.current && !companyFieldRef.current.contains(event.target)) {
+        setCompanySuggestOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [showAdd, companySuggestOpen]);
+
   const applyProspect = (prospect) => {
     if (!prospect) return;
     if (Boolean(prospect.archived) !== archivedView) {
@@ -186,6 +214,8 @@ export default function OutreachSheetTab({ mode = "active" }) {
         formFillUrl: row.formFillUrl || "",
       });
       setFormError("Form Fill URL is required for this outreach method.");
+      setCompanySuggestOpen(false);
+      setShowAdd(true);
       return;
     }
     await patchRow(row.id, { reachOutStatus: method });
@@ -195,7 +225,22 @@ export default function OutreachSheetTab({ mode = "active" }) {
     setEditingRow(null);
     setForm(EMPTY_FORM);
     setFormError("");
+    setCompanySuggestOpen(false);
     setShowAdd(true);
+    setMatchPool(rows);
+    // Include archived so duplicates aren't re-created from the other tab
+    fetchOutreachProspects({ archived: true })
+      .then((result) => {
+        const archived = result.prospects || [];
+        setMatchPool((prev) => {
+          const byId = new Map();
+          for (const row of [...prev, ...archived]) byId.set(row.id, row);
+          return [...byId.values()];
+        });
+      })
+      .catch(() => {
+        /* keep active rows as match pool */
+      });
   };
 
   const openEdit = (row) => {
@@ -206,7 +251,19 @@ export default function OutreachSheetTab({ mode = "active" }) {
       formFillUrl: row.formFillUrl || "",
     });
     setFormError("");
+    setCompanySuggestOpen(false);
     setShowAdd(true);
+  };
+
+  const selectExistingProspect = (row) => {
+    setEditingRow(row);
+    setForm({
+      companyName: row.companyName || "",
+      emails: (row.emails || []).join(", "),
+      formFillUrl: row.formFillUrl || "",
+    });
+    setFormError("");
+    setCompanySuggestOpen(false);
   };
 
   const closeFormModal = () => {
@@ -215,6 +272,8 @@ export default function OutreachSheetTab({ mode = "active" }) {
     setEditingRow(null);
     setForm(EMPTY_FORM);
     setFormError("");
+    setCompanySuggestOpen(false);
+    setMatchPool([]);
   };
 
   const submitForm = async (event) => {
@@ -502,22 +561,57 @@ export default function OutreachSheetTab({ mode = "active" }) {
             aria-label={editingRow ? "Edit prospect" : "Add prospect"}
             onClick={(e) => e.stopPropagation()}
           >
-            <h3>{editingRow ? "Edit prospect" : "Add prospect"}</h3>
+            <h3>{editingRow ? "Update prospect" : "Add prospect"}</h3>
             <p className="subtle">
               {editingRow
-                ? "Update company, email, or Form Fill URL."
-                : "Date added and your name are saved automatically."}
+                ? editingRow.archived
+                  ? "This prospect is in Archive. Saving updates that record."
+                  : "Existing prospect selected — update instead of creating a duplicate."
+                : "Date added and your name are saved automatically. Start typing a company to find existing prospects."}
             </p>
-            <form className="spend-form" onSubmit={submitForm}>
-              <label>
+            <form className="spend-form" onSubmit={submitForm} autoComplete="off">
+              <label className="outreach-company-field" ref={companyFieldRef}>
                 Company Name
                 <input
                   type="text"
                   value={form.companyName}
-                  onChange={(e) => setForm((prev) => ({ ...prev, companyName: e.target.value }))}
+                  onChange={(e) => {
+                    const companyName = e.target.value;
+                    setForm((prev) => ({ ...prev, companyName }));
+                    setCompanySuggestOpen(true);
+                    if (
+                      editingRow &&
+                      companyName.trim().toLowerCase() !==
+                        String(editingRow.companyName || "").trim().toLowerCase()
+                    ) {
+                      // Typing a different name after a match → back to create mode
+                      setEditingRow(null);
+                    }
+                  }}
+                  onFocus={() => setCompanySuggestOpen(true)}
                   required
                   autoFocus
+                  autoComplete="off"
                 />
+                {companySuggestOpen && companyMatches.length > 0 ? (
+                  <ul className="outreach-company-suggest" role="listbox">
+                    {companyMatches.map((row) => (
+                      <li key={row.id}>
+                        <button
+                          type="button"
+                          role="option"
+                          onClick={() => selectExistingProspect(row)}
+                        >
+                          <span>{row.companyName}</span>
+                          <span className="subtle">
+                            {(row.emails || []).join(", ") || "No email"}
+                            {row.archived ? " · Archive" : ""}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </label>
               <label>
                 Email(s)
@@ -527,6 +621,7 @@ export default function OutreachSheetTab({ mode = "active" }) {
                   onChange={(e) => setForm((prev) => ({ ...prev, emails: e.target.value }))}
                   placeholder="name@company.com, other@company.com"
                   required
+                  autoComplete="off"
                 />
               </label>
               <label>
@@ -536,6 +631,7 @@ export default function OutreachSheetTab({ mode = "active" }) {
                   value={form.formFillUrl}
                   onChange={(e) => setForm((prev) => ({ ...prev, formFillUrl: e.target.value }))}
                   placeholder="https://example.com/apply"
+                  autoComplete="off"
                 />
               </label>
               {formError ? <p className="error-text">{formError}</p> : null}
@@ -544,7 +640,7 @@ export default function OutreachSheetTab({ mode = "active" }) {
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-inline" disabled={submitting}>
-                  {submitting ? "Saving..." : editingRow ? "Save changes" : "Add prospect"}
+                  {submitting ? "Saving..." : editingRow ? "Update" : "Add prospect"}
                 </button>
               </div>
             </form>

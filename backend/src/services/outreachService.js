@@ -27,6 +27,10 @@ function actorLabel(actor = {}) {
   return actor.name || actor.email || "Someone";
 }
 
+function escapeRegex(value = "") {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function normalizeEmails(input) {
   const raw = Array.isArray(input) ? input.join(" ") : String(input || "");
   const parts = raw
@@ -196,6 +200,15 @@ export async function createOutreachProspect(body, user) {
 
   const formFillUrl = normalizeFormFillUrl(body.formFillUrl);
 
+  const duplicate = await OutreachProspect.findOne({
+    companyName: { $regex: `^${escapeRegex(companyName)}$`, $options: "i" },
+  }).lean();
+  if (duplicate) {
+    throw new Error(
+      `"${duplicate.companyName}" is already on the sheet. Select it from the suggestions to update.`
+    );
+  }
+
   const created = await OutreachProspect.create({
     companyName,
     emails,
@@ -215,7 +228,7 @@ export async function createOutreachProspect(body, user) {
 
   const prospect = normalizeProspect(created.toObject());
   void notifyOutreachSlack(
-    `🟢 *New prospect added*\n*${prospect.companyName}* · ${prospect.emails.join(", ")}\nby ${actorLabel(actor)}`
+    `${actorLabel(actor)} added ${prospect.companyName} as new prospect`
   );
   return prospect;
 }
@@ -230,6 +243,7 @@ export async function updateOutreachProspect(id, body, user) {
   const today = toEasternDateString();
   const changes = [];
   let touched = false;
+  let outreachLogged = false;
 
   if (body.companyName !== undefined) {
     const companyName = String(body.companyName || "").trim();
@@ -309,6 +323,7 @@ export async function updateOutreachProspect(id, body, user) {
           existing.dateFollowUp = today;
         }
         changes.push(`outreach logged: ${next}`);
+        outreachLogged = true;
       } else if (!next) {
         existing.dateReachOut = "";
         existing.followUpStatus = "";
@@ -353,9 +368,10 @@ export async function updateOutreachProspect(id, body, user) {
   await existing.save();
 
   const prospect = normalizeProspect(existing.toObject());
-  if (changes.length) {
+  // Slack: only when outreach is first logged (not edits / archive / status tweaks)
+  if (outreachLogged) {
     void notifyOutreachSlack(
-      `📣 *Outreach update* — *${prospect.companyName}*\n${changes.map((c) => `• ${c}`).join("\n")}\nby ${actorLabel(actor)}`
+      `${actorLabel(actor)} sent an outreach to ${prospect.companyName}`
     );
   }
   return prospect;
@@ -380,9 +396,6 @@ export async function addOutreachNote(id, body, user) {
   await existing.save();
 
   const prospect = normalizeProspect(existing.toObject());
-  void notifyOutreachSlack(
-    `📝 *Note added* — *${prospect.companyName}*\n>${text.slice(0, 280)}${text.length > 280 ? "…" : ""}\nby ${actorLabel(actor)}`
-  );
   return prospect;
 }
 
