@@ -48,6 +48,9 @@ export async function syncBigoSpendForDateRange({ startDate, endDate }) {
     console.warn("BIGO account list for spend sync failed:", error.message);
   }
 
+  // Report API is ~1 QPS — pause after account list before first report call.
+  await new Promise((r) => setTimeout(r, 1100));
+
   const dates = eachDateInclusive(startDate, endDate);
   let rowsWritten = 0;
   const errors = [];
