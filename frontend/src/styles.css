@@ -2067,9 +2067,24 @@ th {
   letter-spacing: 0.03em;
 }
 
-.todo-status--ongoing {
+.todo-status--pending {
+  background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+  color: var(--text-muted);
+}
+
+.todo-status--ongoing,
+.todo-status--in_progress {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   color: var(--accent);
+}
+
+.todo-status--testing {
+  background: color-mix(in srgb, #c98500 22%, transparent);
+  color: #a56b00;
+}
+
+[data-theme="dark"] .todo-status--testing {
+  color: #f0b84a;
 }
 
 .todo-status--done {
@@ -2091,11 +2106,57 @@ th {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
+  align-items: center;
+}
+
+.todo-stage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.todo-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.28rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.8rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.todo-toggle input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.todo-toggle--on {
+  border-color: color-mix(in srgb, #c98500 55%, var(--border));
+  background: color-mix(in srgb, #c98500 16%, var(--surface));
+  color: #a56b00;
+}
+
+[data-theme="dark"] .todo-toggle--on {
+  color: #f0b84a;
 }
 
 .todo-row--done strong {
   text-decoration: line-through;
   opacity: 0.85;
+}
+
+.todo-row--progress strong {
+  color: var(--text);
+}
+
+.todo-row--testing strong {
+  color: var(--text);
 }
 
 .sop-placeholder {

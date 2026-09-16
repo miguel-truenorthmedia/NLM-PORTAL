@@ -9,17 +9,20 @@ const actorSchema = new mongoose.Schema(
   { _id: false }
 );
 
-export const TODO_STATUSES = ["ongoing", "done"];
+/** Active workflow: pending → in_progress → testing → done (archives). `ongoing` kept for legacy docs. */
+export const TODO_STATUSES = ["pending", "in_progress", "testing", "done", "ongoing"];
+
+export const TODO_ACTIVE_STATUSES = ["pending", "in_progress", "testing"];
 
 const todoItemSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true },
     note: { type: String, default: "", trim: true },
-    /** ongoing | done — marking done auto-archives */
+    /** pending | in_progress | testing | done — marking done auto-archives */
     status: {
       type: String,
       enum: TODO_STATUSES,
-      default: "ongoing",
+      default: "pending",
       index: true,
     },
     archived: { type: Boolean, default: false, index: true },

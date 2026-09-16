@@ -1,5 +1,5 @@
 import { hasMongoConfig } from "../config.js";
-import { TodoItem, TODO_STATUSES } from "../models/TodoItem.js";
+import { TodoItem, TODO_ACTIVE_STATUSES, TODO_STATUSES } from "../models/TodoItem.js";
 
 function requireMongo() {
   if (!hasMongoConfig) {
@@ -16,12 +16,19 @@ function actorFromUser(user) {
   };
 }
 
+/** Map legacy `ongoing` → `pending` for API/UI. */
+export function canonicalTodoStatus(status) {
+  const value = String(status || "pending").trim().toLowerCase();
+  if (value === "ongoing") return "pending";
+  return TODO_STATUSES.includes(value) ? value : "pending";
+}
+
 function normalizeTodo(doc) {
   return {
     id: String(doc._id),
     title: doc.title || "",
     note: doc.note || "",
-    status: doc.status || "ongoing",
+    status: canonicalTodoStatus(doc.status),
     archived: Boolean(doc.archived),
     archivedAt: doc.archivedAt || null,
     archivedBy: doc.archivedBy || { userId: "", name: "", email: "" },
@@ -39,7 +46,11 @@ export async function listTodos(_user, { archived = false } = {}) {
   const docs = await TodoItem.find(filter).sort({ updatedAt: -1, createdAt: -1 }).lean();
   return {
     todos: docs.map(normalizeTodo),
-    meta: { statuses: TODO_STATUSES, archived },
+    meta: {
+      statuses: ["pending", "in_progress", "testing", "done"],
+      activeStatuses: TODO_ACTIVE_STATUSES,
+      archived,
+    },
   };
 }
 
@@ -50,8 +61,10 @@ export async function createTodo(payload, user) {
 
   const actor = actorFromUser(user);
   const note = String(payload?.note || "").trim();
-  let status = String(payload?.status || "ongoing").trim().toLowerCase();
-  if (!TODO_STATUSES.includes(status)) status = "ongoing";
+  let status = canonicalTodoStatus(payload?.status || "pending");
+  if (!TODO_STATUSES.includes(status)) status = "pending";
+  // New tasks always start as pending unless explicitly set further along
+  if (!payload?.status) status = "pending";
 
   const archived = status === "done";
   const doc = await TodoItem.create({
@@ -88,16 +101,16 @@ export async function updateTodo(id, payload, user) {
   }
 
   if (body.status !== undefined) {
-    const status = String(body.status || "").trim().toLowerCase();
-    if (!TODO_STATUSES.includes(status)) {
-      throw new Error(`Invalid status. Allowed: ${TODO_STATUSES.join(", ")}`);
+    const status = canonicalTodoStatus(body.status);
+    if (!["pending", "in_progress", "testing", "done"].includes(status)) {
+      throw new Error("Invalid status. Allowed: pending, in_progress, testing, done");
     }
     doc.status = status;
     if (status === "done") {
       doc.archived = true;
       doc.archivedAt = new Date();
       doc.archivedBy = actor;
-    } else if (status === "ongoing" && doc.archived) {
+    } else if (doc.archived) {
       doc.archived = false;
       doc.archivedAt = null;
       doc.archivedBy = {};
@@ -112,7 +125,7 @@ export async function updateTodo(id, payload, user) {
       doc.archivedAt = new Date();
       doc.archivedBy = actor;
     } else {
-      doc.status = "ongoing";
+      doc.status = "pending";
       doc.archivedAt = null;
       doc.archivedBy = {};
     }

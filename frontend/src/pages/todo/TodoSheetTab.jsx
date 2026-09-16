@@ -15,6 +15,13 @@ function formatWhen(value) {
   });
 }
 
+const STATUS_LABELS = {
+  pending: "To start",
+  in_progress: "In progress",
+  testing: "Testing",
+  done: "Done",
+};
+
 const EMPTY_FORM = { title: "", note: "" };
 
 /**
@@ -70,9 +77,9 @@ export default function TodoSheetTab({ mode = "active" }) {
     setError("");
     setMessage("");
     try {
-      await createTodo({ title: form.title.trim(), note: form.note.trim(), status: "ongoing" });
+      await createTodo({ title: form.title.trim(), note: form.note.trim(), status: "pending" });
       setForm(EMPTY_FORM);
-      setMessage("Task added");
+      setMessage("Task added — tap Start when you begin");
       await load();
     } catch (err) {
       setError(err.response?.data?.error || err.message || "Failed to add task");
@@ -114,13 +121,18 @@ export default function TodoSheetTab({ mode = "active" }) {
     }
   };
 
-  const setStatus = async (row, status) => {
+  const setStatus = async (row, status, successMessage) => {
     setBusyId(row.id);
     setError("");
     setMessage("");
     try {
       await updateTodo(row.id, { status });
-      setMessage(status === "done" ? "Marked done — moved to archive" : "Restored to active");
+      setMessage(
+        successMessage ||
+          (status === "done"
+            ? "Marked done — moved to archive"
+            : `Status → ${STATUS_LABELS[status] || status}`)
+      );
       await load();
     } catch (err) {
       setError(err.response?.data?.error || err.message || "Failed to update status");
@@ -213,15 +225,23 @@ export default function TodoSheetTab({ mode = "active" }) {
               {filtered.map((row) => {
                 const busy = busyId === row.id;
                 const editing = editingId === row.id;
+                const status = row.status || "pending";
                 return (
-                  <tr key={row.id} className={row.status === "done" ? "todo-row--done" : undefined}>
+                  <tr
+                    key={row.id}
+                    className={
+                      status === "done"
+                        ? "todo-row--done"
+                        : status === "testing"
+                          ? "todo-row--testing"
+                          : status === "in_progress"
+                            ? "todo-row--progress"
+                            : undefined
+                    }
+                  >
                     <td>
-                      <span
-                        className={
-                          row.status === "done" ? "todo-status todo-status--done" : "todo-status todo-status--ongoing"
-                        }
-                      >
-                        {row.status === "done" ? "Done" : "Ongoing"}
+                      <span className={`todo-status todo-status--${status}`}>
+                        {STATUS_LABELS[status] || status}
                       </span>
                     </td>
                     <td>
@@ -262,27 +282,77 @@ export default function TodoSheetTab({ mode = "active" }) {
                             >
                               Save
                             </button>
-                            <button type="button" className="btn btn-secondary btn-small" disabled={busy} onClick={cancelEdit}>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-small"
+                              disabled={busy}
+                              onClick={cancelEdit}
+                            >
                               Cancel
                             </button>
                           </>
                         ) : (
                           <>
                             {!archivedView ? (
-                              <button
-                                type="button"
-                                className="btn btn-primary btn-small"
-                                disabled={busy}
-                                onClick={() => setStatus(row, "done")}
-                              >
-                                Mark done
-                              </button>
+                              <div className="todo-stage" role="group" aria-label="Task progress">
+                                {status === "pending" ? (
+                                  <button
+                                    type="button"
+                                    className="btn btn-primary btn-small"
+                                    disabled={busy}
+                                    onClick={() =>
+                                      setStatus(row, "in_progress", "Started — task in progress")
+                                    }
+                                  >
+                                    Start
+                                  </button>
+                                ) : null}
+
+                                {status === "in_progress" || status === "testing" ? (
+                                  <label
+                                    className={
+                                      status === "testing"
+                                        ? "todo-toggle todo-toggle--on"
+                                        : "todo-toggle"
+                                    }
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={status === "testing"}
+                                      disabled={busy}
+                                      onChange={(e) =>
+                                        setStatus(
+                                          row,
+                                          e.target.checked ? "testing" : "in_progress",
+                                          e.target.checked
+                                            ? "Marked for testing"
+                                            : "Back to in progress"
+                                        )
+                                      }
+                                    />
+                                    <span>Testing</span>
+                                  </label>
+                                ) : null}
+
+                                {status === "testing" ? (
+                                  <button
+                                    type="button"
+                                    className="btn btn-primary btn-small"
+                                    disabled={busy}
+                                    onClick={() => setStatus(row, "done")}
+                                  >
+                                    Mark done
+                                  </button>
+                                ) : null}
+                              </div>
                             ) : (
                               <button
                                 type="button"
                                 className="btn btn-secondary btn-small"
                                 disabled={busy}
-                                onClick={() => setStatus(row, "ongoing")}
+                                onClick={() =>
+                                  setStatus(row, "pending", "Restored — tap Start when you begin")
+                                }
                               >
                                 Restore
                               </button>

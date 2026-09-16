@@ -10,7 +10,9 @@ export default function TodoLayout() {
     <section className="accounting-section todo-section">
       <div className="page-header">
         <h2>Todo</h2>
-        <p className="subtle">Personal tasks — mark done to archive. Visible only to you.</p>
+        <p className="subtle">
+          Personal tasks — Start → Testing → Done (archives). Visible only to you.
+        </p>
       </div>
 
       <nav className="accounting-tabs" aria-label="Todo sections">
