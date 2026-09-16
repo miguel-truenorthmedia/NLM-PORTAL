@@ -58,7 +58,14 @@ export default function CampaignTable({ rows }) {
   const [direction, setDirection] = useState("desc");
 
   const sortedRows = useMemo(() => {
-    return [...rows].sort((a, b) => {
+    const visible = rows.filter((row) => {
+      const spend = Number(row.adSpend) || 0;
+      const revenue = Number(row.revenue) || 0;
+      // Hide empty days (e.g. Sundays with a stray call and no money movement)
+      return spend > 0 || revenue > 0;
+    });
+
+    return [...visible].sort((a, b) => {
       const aValue = a[sortKey];
       const bValue = b[sortKey];
       const result =
