@@ -10,12 +10,12 @@ async function runScheduledCampaignSync() {
   }
 
   isRunning = true;
-  console.log("Starting scheduled campaign sync (yesterday from Ringba)...");
+  console.log("Starting scheduled campaign sync (yesterday Ringba revenue + BIGO cost)...");
 
   try {
     const result = await syncYesterdayCampaignData();
     console.log(
-      `Campaign sync finished: ${result.status} (${result.startDate} — ${result.rowsWritten} rows, ${result.durationMs}ms)`
+      `Campaign sync finished: ${result.status} (${result.startDate} — ${result.rowsWritten} revenue rows, ${result.spendRowsWritten ?? 0} spend rows, ${result.durationMs}ms)`
     );
     if (result.errors.length) {
       console.warn("Campaign sync errors:", result.errors);
@@ -36,7 +36,7 @@ export function startCampaignSyncJob() {
     { timezone: "America/New_York" }
   );
 
-  console.log("Campaign sync scheduled for daily 1:00 AM ET (yesterday's Ringba data)");
+  console.log("Campaign sync scheduled for daily 1:00 AM ET (yesterday Ringba revenue + BIGO cost)");
 }
 
 export { runScheduledCampaignSync as runCampaignSyncNow };

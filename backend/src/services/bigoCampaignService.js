@@ -597,6 +597,55 @@ async function fetchReportByAdset({ advertiserId, campaignIds, timezone, startDa
 }
 
 /**
+ * Account-level BIGO spend for a calendar day (advertiser timezone).
+ * Used by the 1 AM campaign sync so Home / Campaign Performance get Cost without manual entry.
+ */
+export async function fetchBigoAdvertiserDayCost({ advertiserId, timezone = -5, date }) {
+  requireBigo();
+  if (!advertiserId || !date) {
+    throw new Error("advertiserId and date are required");
+  }
+
+  const pageSize = 100;
+  let pageNo = 1;
+  const rows = [];
+  let totalCount = null;
+
+  while (pageNo <= 50) {
+    const json = await bigoPost(
+      "/openapi/report/list",
+      {
+        advertiserId: [String(advertiserId)],
+        timezone: Number(timezone),
+        startDate: date,
+        endDate: date,
+        indicators: ["totalCost"],
+        breakDowns: ["campaignId"],
+        aggregateType: 2,
+        pageNo,
+        pageSize,
+      },
+      { advertiserId }
+    );
+    if (!json?.result || !Array.isArray(json.result.list)) {
+      throw new Error(`BIGO report missing result for advertiser ${advertiserId} on ${date}`);
+    }
+    const list = json.result.list;
+    totalCount = json.result.total ?? totalCount;
+    rows.push(...list);
+    if (!list.length || rows.length >= (totalCount ?? rows.length) || list.length < pageSize) break;
+    pageNo += 1;
+    await new Promise((r) => setTimeout(r, 1100));
+  }
+
+  let total = 0;
+  for (const row of rows) {
+    total += fromBigoMoney(row.totalCost);
+  }
+  return Number(total.toFixed(2));
+}
+
+/**
  * Live controller view: tracked campaigns → ad sets + today's cost/conversions.
  */
 export async function getControllerLive() {
