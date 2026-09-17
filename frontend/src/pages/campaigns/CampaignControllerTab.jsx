@@ -450,14 +450,14 @@ export default function CampaignControllerTab() {
 
   useEffect(() => {
     const id = setInterval(() => {
-      // Keep the open tab on live data at least every 5 minutes.
+      // Keep the open tab on live data at least every 1 minute.
       // If backend cron just wrote a fresh snapshot (<90s), only re-read it.
       // Otherwise force a BIGO/Ringba pull so we never sit on stale numbers.
       const fetchedAt = liveFetchedAtRef.current;
       const ageMs = fetchedAt ? Date.now() - new Date(fetchedAt).getTime() : Number.POSITIVE_INFINITY;
       const snapshotIsFresh = Number.isFinite(ageMs) && ageMs < 90_000;
       loadLive({ refresh: !snapshotIsFresh, quiet: true });
-    }, 5 * 60 * 1000);
+    }, 60 * 1000);
     return () => clearInterval(id);
   }, [loadLive]);
 

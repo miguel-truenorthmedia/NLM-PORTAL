@@ -28,12 +28,12 @@ async function runBigoControllerSync() {
 }
 
 export function startBigoControllerSyncJob() {
-  // Every 5 minutes
-  cron.schedule("*/5 * * * *", () => {
+  // Every 1 minute — light at current tracked scale (1 advertiser / ~17 adsets)
+  cron.schedule("* * * * *", () => {
     runBigoControllerSync();
   });
 
-  console.log("BIGO controller sync scheduled every 5 minutes");
+  console.log("BIGO controller sync scheduled every 1 minute");
 
   // Seed snapshot shortly after boot so the page has data without a manual click
   setTimeout(() => {

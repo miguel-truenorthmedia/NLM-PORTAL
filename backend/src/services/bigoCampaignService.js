@@ -1248,8 +1248,8 @@ export async function getControllerSnapshot() {
 }
 
 /**
- * Pull live from BIGO and persist snapshot (used by 5-min job + forced refresh).
- * Movement arrows compare against the ET half-hour baseline (not the previous 5-min pull).
+ * Pull live from BIGO and persist snapshot (used by 1-min job + forced refresh).
+ * Movement arrows compare against the ET half-hour baseline (not the previous 1-min pull).
  */
 export async function syncControllerLive() {
   const live = await getControllerLive();
