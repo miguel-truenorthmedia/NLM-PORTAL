@@ -197,13 +197,15 @@ export default function ReconciliationTab() {
     <div>
       <h3>Reconciliation</h3>
       <p className="subtle">
-        {dataSource === "mongodb"
-          ? `Review sold calls by campaign and buyer for the selected date range. Data is filtered to your From/To dates.${
+        {data?.billingSource === "mongodb-fallback"
+          ? `Ringba live pull failed — showing stored snapshots (may be incomplete for open weeks).${
               lastSyncedAt
-                ? ` Last synced ${new Date(lastSyncedAt).toLocaleString("en-US", { timeZone: "America/New_York" })} ET.`
+                ? ` Snapshot sync ${new Date(lastSyncedAt).toLocaleString("en-US", { timeZone: "America/New_York" })} ET.`
                 : ""
-            } Remove disputed calls before downloading.`
-          : "Review sold calls by campaign and buyer for the selected date range. Data loads live from Ringba."}
+            }`
+          : dataSource === "mongodb" || data?.billingSource === "ringba-live"
+            ? "Live from Ringba for your From/To dates. Disputed removals still apply. Download uses this same list."
+            : "Review sold calls by campaign and buyer for the selected date range. Data loads live from Ringba."}
       </p>
 
       {dataSource === "mongodb" && !loading && campaigns.length === 0 ? (

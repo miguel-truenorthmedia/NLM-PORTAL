@@ -1,7 +1,13 @@
 import { ReconciliationExcludedCall } from "../models/ReconciliationExcludedCall.js";
 import { ReconciliationSnapshot } from "../models/ReconciliationSnapshot.js";
+import { hasRingbaConfig } from "../config.js";
 import { getLastWeekRange, toEasternDateString } from "../utils/dateRange.js";
 import { buildCallKey, callMatchesKey, normalizePhone } from "../utils/reconciliationCallKey.js";
+import {
+  getBuyersForCampaign as fetchBuyersFromRingba,
+  getReconciliationData as fetchReconciliationFromRingba,
+  getReconciliationFilters as fetchFiltersFromRingba,
+} from "./reconciliationService.js";
 
 function inferOfferType(name = "") {
   const lower = name.toLowerCase();
@@ -71,12 +77,15 @@ function callInDateRange(call, startDate, endDate) {
   return day >= startDate && day <= endDate;
 }
 
-function summarizeSoldCalls(soldCalls, campaignName, buyerName) {
+function summarizeSoldCalls(soldCalls, campaignName, buyerName, { incomingCalls = null } = {}) {
   const revenue = soldCalls.reduce((sum, call) => sum + (Number(call.conversionAmount) || 0), 0);
   const payout = soldCalls.reduce((sum, call) => sum + (Number(call.payoutAmount) || 0), 0);
   const convertedCalls = soldCalls.length;
-  // Sold-call store only keeps converted rows; Inc mirrors converted for date-filtered views.
-  const calls = convertedCalls;
+  // Prefer Ringba incoming when available so Inc/RPC match the Ringba buyer report.
+  const calls =
+    incomingCalls != null && Number.isFinite(Number(incomingCalls))
+      ? Number(incomingCalls)
+      : convertedCalls;
   const profit = revenue - payout;
 
   return {
@@ -84,7 +93,7 @@ function summarizeSoldCalls(soldCalls, campaignName, buyerName) {
     buyer: buyerName || "",
     calls,
     convertedCalls,
-    rpc: round(safeDivide(revenue, convertedCalls)),
+    rpc: round(safeDivide(revenue, calls)),
     revenue: round(revenue),
     payout: round(payout),
     profit: round(profit),
@@ -169,8 +178,66 @@ function aggregateCallsInRange(snapshots, { campaignName, buyerName, startDate, 
   };
 }
 
+/**
+ * Billing-accurate reconciliation: live Ringba for the exact From/To range,
+ * then strip permanently disputed removals from Mongo.
+ */
+export async function getLiveReconciliationWithExclusions({
+  campaignName,
+  buyerName,
+  startDate,
+  endDate,
+}) {
+  if (!hasRingbaConfig) {
+    throw new Error("Ringba credentials are required for live reconciliation");
+  }
+
+  const [live, exclusionKeys] = await Promise.all([
+    fetchReconciliationFromRingba({ campaignName, buyerName, startDate, endDate }),
+    getExclusionKeySet(campaignName, buyerName),
+  ]);
+
+  const liveSold = live.calls || [];
+  const soldCalls = filterExcludedCalls(liveSold, campaignName, buyerName, exclusionKeys);
+  const exclusionsApplied = liveSold.length - soldCalls.length;
+  const incomingCalls = Number(live.summary?.calls);
+  const summary = summarizeSoldCalls(soldCalls, campaignName, buyerName, {
+    incomingCalls: Number.isFinite(incomingCalls) ? incomingCalls : null,
+  });
+
+  return {
+    dateRange: { startDate, endDate },
+    summary,
+    calls: soldCalls,
+    totalCallLogs: live.totalCallLogs ?? liveSold.length,
+    soldCallCount: soldCalls.length,
+    syncedAt: new Date().toISOString(),
+    billingSource: "ringba-live",
+    exclusionsApplied,
+  };
+}
+
+/**
+ * Prefer live Ringba (money-safe). Fall back to Mongo weekly snapshots only if Ringba is down.
+ */
 export async function getReconciliationData({ campaignName, buyerName, startDate, endDate }) {
-  // Always load overlapping weekly snapshots, then filter calls to the date picker.
+  if (hasRingbaConfig) {
+    try {
+      return await getLiveReconciliationWithExclusions({
+        campaignName,
+        buyerName,
+        startDate,
+        endDate,
+      });
+    } catch (error) {
+      console.error(
+        "Live Ringba reconciliation failed; falling back to Mongo snapshots:",
+        error.message || error
+      );
+    }
+  }
+
+  // Fallback: overlapping weekly snapshots, then filter calls to the date picker.
   const [snapshots, exclusionKeys] = await Promise.all([
     ReconciliationSnapshot.find(overlapQuery({ campaignName, buyerName, startDate, endDate }))
       .sort({ startDate: 1 })
@@ -180,6 +247,7 @@ export async function getReconciliationData({ campaignName, buyerName, startDate
 
   return {
     dateRange: { startDate, endDate },
+    billingSource: "mongodb-fallback",
     ...aggregateCallsInRange(snapshots, {
       campaignName,
       buyerName,
@@ -269,6 +337,15 @@ export async function removeReconciliationCall({
 }
 
 export async function getBuyersForCampaign(campaignName, startDate, endDate) {
+  // Live Ringba so invoice buyer lists aren't missing anyone from unsynced days.
+  if (hasRingbaConfig) {
+    try {
+      return await fetchBuyersFromRingba(campaignName, startDate, endDate);
+    } catch (error) {
+      console.error("Live Ringba buyers failed; falling back to Mongo:", error.message || error);
+    }
+  }
+
   const [snapshots, exclusionKeys] = await Promise.all([
     ReconciliationSnapshot.find(overlapQuery({ campaignName, startDate, endDate }))
       .select("buyerName calls summary.calls")
@@ -297,6 +374,22 @@ export async function getBuyersForCampaign(campaignName, startDate, endDate) {
 }
 
 export async function getReconciliationFilters(startDate, endDate) {
+  // Prefer live Ringba campaign/buyer lists for the selected range.
+  if (hasRingbaConfig) {
+    try {
+      const live = await fetchFiltersFromRingba(startDate, endDate);
+      const weeks = await listSyncedWeeks().catch(() => []);
+      return {
+        ...live,
+        weeks,
+        billingSource: "ringba-live",
+        lastSyncedAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      console.error("Live Ringba filters failed; falling back to Mongo:", error.message || error);
+    }
+  }
+
   const defaultRange = getLastWeekRange();
   const weeks = await listSyncedWeeks();
   const range = {
@@ -359,6 +452,7 @@ export async function getReconciliationFilters(startDate, endDate) {
     defaultCampaign: feCampaign,
     defaultBuyer: buyers.find((b) => b.name === "Elijay Marketing") || buyers[0] || null,
     lastSyncedAt,
+    billingSource: "mongodb-fallback",
   };
 }
 
