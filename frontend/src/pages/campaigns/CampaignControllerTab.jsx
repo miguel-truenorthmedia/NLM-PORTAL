@@ -907,7 +907,7 @@ export default function CampaignControllerTab() {
         <div className="bigo-controller-header-main">
           <h3>Campaign controller</h3>
           <p className="subtle">
-            Account → Campaign → Ad groups · Auto every 5 min · Updated {formatWhen(live.fetchedAt)}
+            Account → Campaign → Ad groups · Auto every 1 min · Updated {formatWhen(live.fetchedAt)}
           </p>
         </div>
         <div className="bigo-controller-header-actions">

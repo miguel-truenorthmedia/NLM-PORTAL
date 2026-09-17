@@ -1166,7 +1166,7 @@ async function getMovementBaseline() {
 /**
  * Ensure we have a baseline for the current ET half-hour.
  * Only writes when the window rolls (e.g. 10:00 → 10:30) or on first run.
- * Live 5-min snapshot flow is unchanged.
+ * Live 1-min snapshot flow is unchanged.
  */
 async function ensureMovementBaseline(live) {
   requireMongo();

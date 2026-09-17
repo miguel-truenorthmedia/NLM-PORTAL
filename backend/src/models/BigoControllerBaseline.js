@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 /**
  * Half-hour baseline for Cost/CPC movement arrows + future Slack alerts.
- * Independent of the live 5-min controller snapshot (which stays current).
+ * Independent of the live 1-min controller snapshot (which stays current).
  * Only cost/cpc per entity — kept small on purpose.
  */
 const bigoControllerBaselineSchema = new mongoose.Schema(
