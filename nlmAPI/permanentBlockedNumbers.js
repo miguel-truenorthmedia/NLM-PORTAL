@@ -10,6 +10,10 @@ export const PERMANENT_BLOCKED_NUMBERS = [
   "+12085229897",
   "+12085347865",
   "+14068028347",
+  "+19173942390",
+  "+15132673948",
+  "+16787633561",
+  "+18706563888",
 ];
 
 /** Digits-only compare key (handles formatting differences). */

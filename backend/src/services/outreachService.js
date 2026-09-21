@@ -3,10 +3,11 @@ import {
   DEFAULT_FOLLOW_UP_STATUS,
   FOLLOW_UP_STATUSES,
   OutreachProspect,
+  PIPELINE_STALE_DAYS,
   REACH_OUT_STATUSES,
 } from "../models/OutreachProspect.js";
 import { toEasternDateString } from "../utils/dateRange.js";
-import { notifyOutreachSlack } from "./slackService.js";
+import { notifyAccountingSlack, notifyOutreachSlack } from "./slackService.js";
 
 function requireMongo() {
   if (!hasMongoConfig) {
@@ -55,23 +56,131 @@ function normalizeFormFillUrl(input) {
   return value;
 }
 
+/** Map legacy follow-up labels → current set. Returns { status, changed }. */
+function mapLegacyFollowUpStatus(status) {
+  const value = String(status || "").trim();
+  if (!value) return { status: "", changed: false };
+
+  const map = {
+    Responded: "In Communication",
+    "Currently in communication": "In Communication",
+    "Accepted our business": "Accepted",
+    "Declined our business": "Declined/not interested",
+    "Continuing attempt at outreach": "Awaiting response",
+    "No response": "Awaiting response",
+  };
+
+  if (map[value]) {
+    return { status: map[value], changed: true };
+  }
+  if (FOLLOW_UP_STATUSES.includes(value) || value === "Awaiting response") {
+    return { status: value, changed: false };
+  }
+  return { status: value, changed: false };
+}
+
 function migrateLegacyFields(doc) {
   let changed = false;
   if (doc.reachOutStatus === "Emailed") {
     doc.reachOutStatus = "Email";
     changed = true;
   }
-  if (doc.followUpStatus === "Responded") {
-    doc.followUpStatus = "Currently in communication";
+
+  const mapped = mapLegacyFollowUpStatus(doc.followUpStatus);
+  if (mapped.changed) {
+    doc.followUpStatus = mapped.status;
     changed = true;
   }
+
+  if (!doc.pipelineBucket || !["active", "no_response", "follow_up", "accepted"].includes(doc.pipelineBucket)) {
+    doc.pipelineBucket = "active";
+    changed = true;
+  }
+
+  // Accepted lives on its own tab
+  if (doc.followUpStatus === "Accepted" && !doc.archived && doc.pipelineBucket !== "accepted") {
+    doc.pipelineBucket = "accepted";
+    clearTimingFields(doc);
+    changed = true;
+  }
+
+  // Start 7-day clock from today for awaiting leads that never had awaitingSince
+  if (
+    doc.followUpStatus === "Awaiting response" &&
+    !doc.archived &&
+    !doc.awaitingSince &&
+    doc.pipelineBucket === "active"
+  ) {
+    doc.awaitingSince = new Date();
+    changed = true;
+  }
+
+  // Declined must live in Archive (covers legacy rows that only got a status rename)
+  if (doc.followUpStatus === "Declined/not interested" && !doc.archived) {
+    doc.archived = true;
+    doc.archivedAt = doc.archivedAt || new Date();
+    clearTimingFields(doc);
+    changed = true;
+  }
+
   return changed;
+}
+
+function clearTimingFields(doc) {
+  doc.awaitingSince = null;
+  doc.noResponseSince = null;
+}
+
+function applyStatusSideEffects(doc, nextStatus, actor) {
+  const prev = doc.followUpStatus || "";
+
+  if (nextStatus === "Awaiting response") {
+    doc.awaitingSince = new Date();
+    doc.noResponseSince = null;
+    if (!doc.archived) {
+      doc.pipelineBucket = "active";
+    }
+    return;
+  }
+
+  if (nextStatus === "In Communication") {
+    clearTimingFields(doc);
+    if (!doc.archived) {
+      doc.pipelineBucket = "active";
+    }
+    return;
+  }
+
+  if (nextStatus === "Declined/not interested") {
+    clearTimingFields(doc);
+    doc.archived = true;
+    doc.archivedAt = new Date();
+    doc.archivedBy = actor;
+    return;
+  }
+
+  if (nextStatus === "Accepted") {
+    clearTimingFields(doc);
+    if (!doc.archived) {
+      doc.pipelineBucket = "accepted";
+    }
+    return;
+  }
+
+  // Cleared ("")
+  if (prev === "Awaiting response" || nextStatus === "") {
+    clearTimingFields(doc);
+  }
+  if (!doc.archived && nextStatus === "") {
+    doc.pipelineBucket = "active";
+  }
 }
 
 function normalizeNote(note) {
   return {
     id: String(note._id || note.id || ""),
     text: note.text || "",
+    ignored: Boolean(note.ignored),
     createdBy: note.createdBy || { userId: "", name: "", email: "" },
     createdAt: note.createdAt || null,
   };
@@ -89,6 +198,9 @@ function normalizeProspect(doc) {
     reachOutStatus: doc.reachOutStatus || "",
     dateFollowUp: doc.dateFollowUp || "",
     followUpStatus: doc.followUpStatus || "",
+    pipelineBucket: doc.pipelineBucket || "active",
+    awaitingSince: doc.awaitingSince || null,
+    noResponseSince: doc.noResponseSince || null,
     notes: Array.isArray(doc.notes) ? doc.notes.map(normalizeNote) : [],
     noteCount: Array.isArray(doc.notes) ? doc.notes.length : 0,
     archived: Boolean(doc.archived),
@@ -130,9 +242,21 @@ const SEED_ROWS = [
   { companyName: "Prestige Calls", emails: ["business@prestigecalls.com"] },
 ];
 
+/** Process-local caches so list requests don't pay migration/seed/advance every time */
+let seedReady = false;
+let migrationReady = false;
+let advanceInFlight = false;
+let lastAdvanceAt = 0;
+/** Backup advance while browsing — cron still owns the daily pass */
+const ADVANCE_MIN_INTERVAL_MS = 15 * 60 * 1000;
+
 async function ensureSeeded(actor) {
-  const count = await OutreachProspect.countDocuments();
-  if (count > 0) return;
+  if (seedReady) return;
+  const any = await OutreachProspect.exists({});
+  if (any) {
+    seedReady = true;
+    return;
+  }
 
   const today = toEasternDateString();
   const docs = SEED_ROWS.map((row) => ({
@@ -145,6 +269,9 @@ async function ensureSeeded(actor) {
     reachOutStatus: "",
     dateFollowUp: "",
     followUpStatus: "",
+    pipelineBucket: "active",
+    awaitingSince: null,
+    noResponseSince: null,
     notes: [],
     archived: false,
     createdBy: actor,
@@ -152,17 +279,144 @@ async function ensureSeeded(actor) {
     lastEditedAt: new Date(),
   }));
   await OutreachProspect.insertMany(docs);
+  seedReady = true;
 }
 
 async function migrateLegacyProspects() {
+  if (migrationReady) return;
+
+  await Promise.all([
+    OutreachProspect.updateMany(
+      {
+        archived: { $ne: true },
+        $or: [{ pipelineBucket: { $exists: false } }, { pipelineBucket: null }, { pipelineBucket: "" }],
+      },
+      { $set: { pipelineBucket: "active" } }
+    ),
+    OutreachProspect.updateMany(
+      {
+        followUpStatus: { $in: ["Declined/not interested", "Declined our business"] },
+        archived: { $ne: true },
+      },
+      {
+        $set: {
+          followUpStatus: "Declined/not interested",
+          archived: true,
+          archivedAt: new Date(),
+          awaitingSince: null,
+          noResponseSince: null,
+        },
+      }
+    ),
+    OutreachProspect.updateMany(
+      {
+        followUpStatus: { $in: ["Accepted", "Accepted our business"] },
+        archived: { $ne: true },
+        pipelineBucket: { $ne: "accepted" },
+      },
+      {
+        $set: {
+          followUpStatus: "Accepted",
+          pipelineBucket: "accepted",
+          awaitingSince: null,
+          noResponseSince: null,
+        },
+      }
+    ),
+  ]);
+
   const legacy = await OutreachProspect.find({
-    $or: [{ reachOutStatus: "Emailed" }, { followUpStatus: "Responded" }],
+    $or: [
+      { reachOutStatus: "Emailed" },
+      {
+        followUpStatus: {
+          $in: [
+            "Responded",
+            "Currently in communication",
+            "Accepted our business",
+            "Declined our business",
+            "Continuing attempt at outreach",
+            "No response",
+          ],
+        },
+      },
+      {
+        followUpStatus: "Awaiting response",
+        awaitingSince: null,
+        archived: { $ne: true },
+        pipelineBucket: "active",
+      },
+    ],
   });
   for (const doc of legacy) {
     if (migrateLegacyFields(doc)) {
       await doc.save();
     }
   }
+
+  migrationReady = true;
+}
+
+/**
+ * Auto-advance stale prospects:
+ * - Awaiting + active + awaitingSince ≥ 7d → no_response
+ * - no_response + noResponseSince ≥ 7d → follow_up
+ */
+export async function advanceStaleProspects() {
+  requireMongo();
+  const cutoff = new Date(Date.now() - PIPELINE_STALE_DAYS * 24 * 60 * 60 * 1000);
+  const now = new Date();
+
+  const [toNoResponse, toFollowUp] = await Promise.all([
+    OutreachProspect.updateMany(
+      {
+        archived: { $ne: true },
+        followUpStatus: "Awaiting response",
+        pipelineBucket: "active",
+        awaitingSince: { $ne: null, $lte: cutoff },
+      },
+      {
+        $set: {
+          pipelineBucket: "no_response",
+          noResponseSince: now,
+        },
+      }
+    ),
+    OutreachProspect.updateMany(
+      {
+        archived: { $ne: true },
+        pipelineBucket: "no_response",
+        noResponseSince: { $ne: null, $lte: cutoff },
+      },
+      {
+        $set: {
+          pipelineBucket: "follow_up",
+        },
+      }
+    ),
+  ]);
+
+  lastAdvanceAt = Date.now();
+  return {
+    movedToNoResponse: toNoResponse.modifiedCount || 0,
+    movedToFollowUp: toFollowUp.modifiedCount || 0,
+  };
+}
+
+/** Non-blocking, throttled — list pages must not wait on pipeline writes */
+function scheduleAdvanceIfDue() {
+  const now = Date.now();
+  if (advanceInFlight) return;
+  if (now - lastAdvanceAt < ADVANCE_MIN_INTERVAL_MS) return;
+  advanceInFlight = true;
+  lastAdvanceAt = now;
+  advanceStaleProspects()
+    .catch((error) => {
+      console.warn("Background outreach pipeline advance failed:", error.message);
+    })
+    .finally(() => {
+      advanceInFlight = false;
+    });
 }
 
 function metaPayload() {
@@ -170,23 +424,70 @@ function metaPayload() {
     reachOutStatuses: REACH_OUT_STATUSES,
     followUpStatuses: FOLLOW_UP_STATUSES,
     defaultFollowUpStatus: DEFAULT_FOLLOW_UP_STATUS,
+    pipelineStaleDays: PIPELINE_STALE_DAYS,
   };
 }
 
-export async function listOutreachProspects(user, { archived = false } = {}) {
+function resolveView({ archived = false, view } = {}) {
+  const raw = String(view || "").trim().toLowerCase();
+  if (
+    archived === true ||
+    raw === "archived" ||
+    raw === "archive"
+  ) {
+    return "archived";
+  }
+  if (raw === "no_response" || raw === "no-response") return "no_response";
+  if (raw === "follow_up" || raw === "follow-up") return "follow_up";
+  if (raw === "accepted") return "accepted";
+  return "active";
+}
+
+export async function listOutreachProspects(user, options = {}) {
   requireMongo();
-  await ensureSeeded(actorFromUser(user));
+  const actor = actorFromUser(user);
+  // First hit after process start may migrate once; later hits are a single find
+  await ensureSeeded(actor);
   await migrateLegacyProspects();
-  const query = archived
-    ? { archived: true }
-    : { $or: [{ archived: false }, { archived: { $exists: false } }] };
+  scheduleAdvanceIfDue();
+
+  const resolvedView = resolveView(options);
+  let query;
+  if (resolvedView === "archived") {
+    query = { archived: true };
+  } else if (resolvedView === "active") {
+    query = {
+      archived: { $ne: true },
+      pipelineBucket: "active",
+    };
+  } else if (resolvedView === "accepted") {
+    query = {
+      archived: { $ne: true },
+      pipelineBucket: "accepted",
+      followUpStatus: "Accepted",
+    };
+  } else {
+    query = {
+      archived: { $ne: true },
+      pipelineBucket: resolvedView,
+    };
+  }
+
   const rows = await OutreachProspect.find(query)
     .sort({ dateAdded: -1, companyName: 1 })
     .lean();
   return {
     prospects: rows.map(normalizeProspect),
     meta: metaPayload(),
+    view: resolvedView,
   };
+}
+
+/** Call once at boot so the first user request isn't the warm-up tax */
+export async function warmOutreachCaches() {
+  requireMongo();
+  await ensureSeeded({ userId: "", name: "System", email: "" });
+  await migrateLegacyProspects();
 }
 
 export async function createOutreachProspect(body, user) {
@@ -196,7 +497,6 @@ export async function createOutreachProspect(body, user) {
   if (!companyName) throw new Error("Company name is required");
 
   const emails = normalizeEmails(body.emails ?? body.email);
-  if (!emails.length) throw new Error("At least one email is required");
 
   const formFillUrl = normalizeFormFillUrl(body.formFillUrl);
 
@@ -219,6 +519,9 @@ export async function createOutreachProspect(body, user) {
     reachOutStatus: "",
     dateFollowUp: "",
     followUpStatus: "",
+    pipelineBucket: "active",
+    awaitingSince: null,
+    noResponseSince: null,
     notes: [],
     archived: false,
     createdBy: actor,
@@ -244,6 +547,7 @@ export async function updateOutreachProspect(id, body, user) {
   const changes = [];
   let touched = false;
   let outreachLogged = false;
+  let acceptedForOnboarding = false;
 
   if (body.companyName !== undefined) {
     const companyName = String(body.companyName || "").trim();
@@ -257,11 +561,10 @@ export async function updateOutreachProspect(id, body, user) {
 
   if (body.emails !== undefined || body.email !== undefined) {
     const emails = normalizeEmails(body.emails ?? body.email);
-    if (!emails.length) throw new Error("At least one email is required");
     const prev = (existing.emails || []).join(", ");
     const next = emails.join(", ");
     if (prev !== next) {
-      changes.push(`email → ${next}`);
+      changes.push(next ? `email → ${next}` : "email cleared");
       existing.emails = emails;
       touched = true;
     }
@@ -288,10 +591,12 @@ export async function updateOutreachProspect(id, body, user) {
       if (nextArchived) {
         existing.archivedAt = new Date();
         existing.archivedBy = actor;
+        clearTimingFields(existing);
         changes.push("archived (not interested)");
       } else {
         existing.archivedAt = null;
         existing.archivedBy = { userId: "", name: "", email: "" };
+        existing.pipelineBucket = "active";
         changes.push("restored from archive");
       }
       touched = true;
@@ -321,6 +626,7 @@ export async function updateOutreachProspect(id, body, user) {
         if (!existing.followUpStatus) {
           existing.followUpStatus = DEFAULT_FOLLOW_UP_STATUS;
           existing.dateFollowUp = today;
+          applyStatusSideEffects(existing, DEFAULT_FOLLOW_UP_STATUS, actor);
         }
         changes.push(`outreach logged: ${next}`);
         outreachLogged = true;
@@ -328,6 +634,8 @@ export async function updateOutreachProspect(id, body, user) {
         existing.dateReachOut = "";
         existing.followUpStatus = "";
         existing.dateFollowUp = "";
+        clearTimingFields(existing);
+        existing.pipelineBucket = "active";
         changes.push("outreach reset to default");
       } else {
         changes.push(`outreach → ${next}`);
@@ -341,7 +649,8 @@ export async function updateOutreachProspect(id, body, user) {
       throw new Error("Log outreach before setting status");
     }
     let next = String(body.followUpStatus || "").trim();
-    if (next === "Responded") next = "Currently in communication";
+    const mapped = mapLegacyFollowUpStatus(next);
+    next = mapped.status;
     if (next && !FOLLOW_UP_STATUSES.includes(next)) {
       throw new Error(`Invalid status. Allowed: ${FOLLOW_UP_STATUSES.join(", ")}`);
     }
@@ -353,6 +662,10 @@ export async function updateOutreachProspect(id, body, user) {
       }
       if (!next) {
         existing.dateFollowUp = "";
+      }
+      applyStatusSideEffects(existing, next, actor);
+      if (next === "Accepted") {
+        acceptedForOnboarding = true;
       }
       changes.push(`status → ${next || "(cleared)"}`);
       touched = true;
@@ -374,6 +687,9 @@ export async function updateOutreachProspect(id, body, user) {
       `${actorLabel(actor)} sent an outreach to ${prospect.companyName}`
     );
   }
+  if (acceptedForOnboarding) {
+    void notifyAccountingSlack(`${prospect.companyName} ready for onboarding`);
+  }
   return prospect;
 }
 
@@ -388,6 +704,7 @@ export async function addOutreachNote(id, body, user) {
 
   existing.notes.push({
     text,
+    ignored: false,
     createdBy: actor,
     createdAt: new Date(),
   });
@@ -397,6 +714,33 @@ export async function addOutreachNote(id, body, user) {
 
   const prospect = normalizeProspect(existing.toObject());
   return prospect;
+}
+
+export async function setOutreachNoteIgnored(id, noteId, ignored, user) {
+  requireMongo();
+  const actor = actorFromUser(user);
+  const noteKey = String(noteId || "").trim();
+  if (!noteKey) throw new Error("Note id is required");
+
+  const existing = await OutreachProspect.findById(id);
+  if (!existing) throw new Error("Prospect not found");
+
+  let note = null;
+  if (typeof existing.notes.id === "function") {
+    note = existing.notes.id(noteKey);
+  }
+  if (!note) {
+    note = existing.notes.find((n) => String(n._id) === noteKey || String(n.id) === noteKey);
+  }
+  if (!note) throw new Error("Note not found");
+
+  note.ignored = Boolean(ignored);
+  existing.updatedBy = actor;
+  existing.lastEditedAt = new Date();
+  existing.markModified("notes");
+  await existing.save();
+
+  return normalizeProspect(existing.toObject());
 }
 
 export async function deleteOutreachProspect(id) {

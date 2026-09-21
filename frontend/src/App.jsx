@@ -161,6 +161,9 @@ export default function App() {
       >
         <Route index element={<Navigate to="outreach" replace />} />
         <Route path="outreach" element={<OutreachSheetTab mode="active" />} />
+        <Route path="no-response" element={<OutreachSheetTab mode="no_response" />} />
+        <Route path="follow-up" element={<OutreachSheetTab mode="follow_up" />} />
+        <Route path="accepted" element={<OutreachSheetTab mode="accepted" />} />
         <Route path="archive" element={<OutreachSheetTab mode="archived" />} />
       </Route>
       <Route

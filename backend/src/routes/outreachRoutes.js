@@ -4,6 +4,7 @@ import {
   createOutreachProspect,
   deleteOutreachProspect,
   listOutreachProspects,
+  setOutreachNoteIgnored,
   updateOutreachProspect,
 } from "../services/outreachService.js";
 
@@ -30,8 +31,10 @@ router.get("/", async (req, res) => {
     const archived =
       req.query.archived === "1" ||
       req.query.archived === "true" ||
-      req.query.view === "archive";
-    const result = await listOutreachProspects(req.user, { archived });
+      req.query.view === "archive" ||
+      req.query.view === "archived";
+    const view = archived ? "archived" : String(req.query.view || "active").trim();
+    const result = await listOutreachProspects(req.user, { archived, view });
     res.json(result);
   } catch (error) {
     res.status(statusForError(error.message)).json({ error: error.message });
@@ -51,6 +54,37 @@ router.post("/:id/notes", async (req, res) => {
   try {
     const prospect = await addOutreachNote(req.params.id, req.body || {}, req.user);
     res.status(201).json({ prospect });
+  } catch (error) {
+    res.status(statusForError(error.message)).json({ error: error.message });
+  }
+});
+
+router.post("/:id/notes/:noteId/ignore", async (req, res) => {
+  try {
+    const ignored =
+      req.body?.ignored === undefined ? true : Boolean(req.body.ignored);
+    const prospect = await setOutreachNoteIgnored(
+      req.params.id,
+      req.params.noteId,
+      ignored,
+      req.user
+    );
+    res.json({ prospect });
+  } catch (error) {
+    res.status(statusForError(error.message)).json({ error: error.message });
+  }
+});
+
+/** Alias — some clients/proxies mishandle PATCH */
+router.patch("/:id/notes/:noteId", async (req, res) => {
+  try {
+    const prospect = await setOutreachNoteIgnored(
+      req.params.id,
+      req.params.noteId,
+      Boolean(req.body?.ignored),
+      req.user
+    );
+    res.json({ prospect });
   } catch (error) {
     res.status(statusForError(error.message)).json({ error: error.message });
   }

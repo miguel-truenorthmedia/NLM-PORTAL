@@ -50,12 +50,11 @@ router.get("/tracked", async (_req, res) => {
 router.put("/tracked", async (req, res) => {
   try {
     const result = await setTrackedCampaigns(req.body?.campaigns || [], req.user);
-    try {
-      await syncControllerLive();
-    } catch (syncError) {
-      console.warn("BIGO snapshot refresh after track save failed:", syncError.message);
-    }
+    // Respond immediately — full BIGO snapshot sync can exceed nginx's default 60s.
     res.json(result);
+    syncControllerLive().catch((syncError) => {
+      console.warn("BIGO snapshot refresh after track save failed:", syncError.message);
+    });
   } catch (error) {
     res.status(statusForError(error.message)).json({ error: error.message });
   }

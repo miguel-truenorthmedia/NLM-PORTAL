@@ -114,10 +114,35 @@ async function getValidAccessToken() {
   return creds.accessToken;
 }
 
+/** BIGO report/list APIs are ~1 QPS — serialize all OpenAPI calls process-wide. */
+const BIGO_MIN_GAP_MS = 1100;
+let bigoQueue = Promise.resolve();
+let lastBigoCallAt = 0;
+
+function enqueueBigoCall(fn) {
+  const run = bigoQueue.then(async () => {
+    const wait = Math.max(0, BIGO_MIN_GAP_MS - (Date.now() - lastBigoCallAt));
+    if (wait) await new Promise((r) => setTimeout(r, wait));
+    lastBigoCallAt = Date.now();
+    return fn();
+  });
+  // Keep the chain alive after failures so later callers still serialize.
+  bigoQueue = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
+function isBigoRateLimited(message = "") {
+  return /rate limit|try again later|too many|qps/i.test(String(message));
+}
+
 /**
  * POST JSON to BIGO OpenAPI. Retries once after token refresh on auth failure.
+ * Rate-limit / transient errors retry with backoff (money-critical spend sync).
  */
-export async function bigoPost(path, body = {}, { advertiserId } = {}) {
+export async function bigoPost(path, body = {}, { advertiserId, maxRetries = 5 } = {}) {
   const run = async (token) => {
     const headers = {
       "Content-Type": "application/json",
@@ -146,25 +171,43 @@ export async function bigoPost(path, body = {}, { advertiserId } = {}) {
     return { status: res.status, json };
   };
 
-  let token = await getValidAccessToken();
-  let result = await run(token);
+  let attempt = 0;
+  while (true) {
+    attempt += 1;
+    try {
+      return await enqueueBigoCall(async () => {
+        let token = await getValidAccessToken();
+        let result = await run(token);
 
-  const authFailed =
-    result.status === 401 ||
-    result.json?.retcode === 401 ||
-    /token|unauth|expire/i.test(String(result.json?.retmsg || ""));
+        const authFailed =
+          result.status === 401 ||
+          result.json?.retcode === 401 ||
+          /token|unauth|expire/i.test(String(result.json?.retmsg || ""));
 
-  if (authFailed) {
-    const creds = await loadStoredCredentials();
-    const refreshed = await refreshTokens(creds.refreshToken);
-    result = await run(refreshed.accessToken);
+        if (authFailed) {
+          const creds = await loadStoredCredentials();
+          const refreshed = await refreshTokens(creds.refreshToken);
+          result = await run(refreshed.accessToken);
+        }
+
+        if (result.json?.retcode != null && result.json.retcode !== 0) {
+          throw new Error(result.json.retmsg || `BIGO API error (retcode ${result.json.retcode})`);
+        }
+
+        return result.json;
+      });
+    } catch (error) {
+      const message = error?.message || String(error);
+      if (!isBigoRateLimited(message) || attempt >= maxRetries) {
+        throw error;
+      }
+      const backoffMs = Math.min(15_000, 2_000 * attempt);
+      console.warn(
+        `BIGO rate-limited on ${path} (attempt ${attempt}/${maxRetries}); retrying in ${backoffMs}ms`
+      );
+      await new Promise((r) => setTimeout(r, backoffMs));
+    }
   }
-
-  if (result.json?.retcode != null && result.json.retcode !== 0) {
-    throw new Error(result.json.retmsg || `BIGO API error (retcode ${result.json.retcode})`);
-  }
-
-  return result.json;
 }
 
 export async function bigoListAll(path, baseBody = {}, { advertiserId } = {}) {

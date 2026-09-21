@@ -2,6 +2,9 @@ import { NavLink, Outlet } from "react-router-dom";
 
 const TABS = [
   { to: "/sales/outreach", label: "Outreach Sheet" },
+  { to: "/sales/no-response", label: "No response" },
+  { to: "/sales/follow-up", label: "Follow-up" },
+  { to: "/sales/accepted", label: "Accepted" },
   { to: "/sales/archive", label: "Archive" },
 ];
 

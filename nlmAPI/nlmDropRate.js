@@ -1,10 +1,12 @@
 /**
- * nlmDropRate — campaign drop-rate monitor (last 30 minutes).
+ * nlmDropRate — campaign drop-rate monitor (clock-aligned 30-minute windows).
  *
  * Drop rate = (-no value- incoming) / (campaign total incoming)
- * Slack alert only when total incoming >= MIN_TOTAL_CALLS (default 20).
+ * Slack alert only when total incoming >= MIN_TOTAL_CALLS (default 5).
  *
- * Schedule: every 30 min, 9:00 AM – 6:00 PM America/New_York (see schedules.config.js)
+ * Schedule: every 30 min from 9:30 AM through 5:00 PM America/New_York
+ * (see schedules.config.js). Each run evaluates the just-completed half hour:
+ *   10:30 → 10:00–10:30 ET · 11:00 → 10:30–11:00 ET · … · 17:00 → 16:30–17:00 ET
  */
 import dotenv from "dotenv";
 import axios from "axios";
@@ -27,11 +29,11 @@ const SLACK_WEBHOOK_URL =
   "";
 
 const WINDOW_MINUTES = Number(process.env.DROP_RATE_WINDOW_MINUTES || 30);
-const MIN_TOTAL_CALLS = Number(process.env.DROP_RATE_MIN_TOTAL_CALLS || 20);
+const MIN_TOTAL_CALLS = Number(process.env.DROP_RATE_MIN_TOTAL_CALLS || 5);
 const DRY_RUN =
   process.argv.includes("--dry-run") ||
   String(process.env.DROP_RATE_DRY_RUN || "").toLowerCase() === "true";
-/** When true, skip the 9–6 ET window gate (for manual tests). */
+/** When true, skip the 9:30–5:00 ET window gate (for manual tests). */
 const FORCE = process.argv.includes("--force");
 
 const NO_VALUE_TARGETS = new Set(["-no value-", "no value", "(no value)", ""]);
@@ -90,20 +92,100 @@ function getEasternParts(date = new Date()) {
 }
 
 /**
- * Business window: 9:00 AM through 6:00 PM ET inclusive (allows 18:00, blocks 18:30+).
+ * Active run window: 9:30 AM through 5:00 PM ET inclusive
+ * (allows 17:00, blocks 9:00 and 17:30+).
  */
 export function isWithinDropRateWindow(date = new Date()) {
   const { hour, minute } = getEasternParts(date);
   const mins = hour * 60 + minute;
-  return mins >= 9 * 60 && mins <= 18 * 60;
+  return mins >= 9 * 60 + 30 && mins <= 17 * 60;
 }
 
-function lastWindowIso(minutes = WINDOW_MINUTES) {
-  const end = Date.now();
-  const start = end - minutes * 60 * 1000;
+/** ET offset minutes at `utcDate` (e.g. -240 for EDT). */
+function getEtOffsetMinutes(utcDate) {
+  const tzName =
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      timeZoneName: "shortOffset",
+      hour: "2-digit",
+    })
+      .formatToParts(utcDate)
+      .find((p) => p.type === "timeZoneName")?.value || "GMT-5";
+  const match = tzName.match(/GMT([+-]\d+)(?::(\d+))?/i);
+  if (!match) return -5 * 60;
+  const hours = Number(match[1]);
+  const mins = Number(match[2] || 0);
+  return hours * 60 + Math.sign(hours || 1) * mins;
+}
+
+/** Convert an America/New_York wall time to a UTC Date. */
+function etWallToUtc({ year, month, day, hour, minute }) {
+  const asUtcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0, 0));
+  const offsetMinutes = getEtOffsetMinutes(asUtcGuess);
+  return new Date(asUtcGuess.getTime() - offsetMinutes * 60 * 1000);
+}
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+/**
+ * Just-completed clock-aligned half hour in ET.
+ * Trigger 10:30 → 10:00–10:30 · trigger 11:00 → 10:30–11:00.
+ */
+export function previousHalfHourWindowEt(now = new Date()) {
+  const parts = getEasternParts(now);
+  const endMinute = parts.minute < 30 ? 0 : 30;
+  const endHour = parts.hour;
+
+  let startMinute = endMinute === 0 ? 30 : 0;
+  let startHour = endMinute === 0 ? endHour - 1 : endHour;
+  let startDay = parts.day;
+  let startMonth = parts.month;
+  let startYear = parts.year;
+
+  if (startHour < 0) {
+    const noonUtc = etWallToUtc({
+      year: parts.year,
+      month: parts.month,
+      day: parts.day,
+      hour: 12,
+      minute: 0,
+    });
+    const prevNoon = new Date(noonUtc.getTime() - 24 * 60 * 60 * 1000);
+    const prev = getEasternParts(prevNoon);
+    startYear = prev.year;
+    startMonth = prev.month;
+    startDay = prev.day;
+    startHour = 23;
+    startMinute = 30;
+  }
+
+  const startUtc = etWallToUtc({
+    year: startYear,
+    month: startMonth,
+    day: startDay,
+    hour: startHour,
+    minute: startMinute,
+  });
+  const endUtc = etWallToUtc({
+    year: parts.year,
+    month: parts.month,
+    day: parts.day,
+    hour: endHour,
+    minute: endMinute,
+  });
+
+  const label = `${pad2(startHour)}:${pad2(startMinute)}–${pad2(endHour)}:${pad2(endMinute)} ET`;
+
   return {
-    reportStart: new Date(start).toISOString(),
-    reportEnd: new Date(end).toISOString(),
+    reportStart: startUtc.toISOString(),
+    reportEnd: endUtc.toISOString(),
+    label,
+    startHour,
+    startMinute,
+    endHour,
+    endMinute,
   };
 }
 
@@ -158,10 +240,10 @@ function formatDropRatePct(noValue, total) {
   return ((noValue / total) * 100).toFixed(2);
 }
 
-function buildSlackText(campaignDisplayName, dropRatePct) {
+function buildSlackText(campaignDisplayName, dropRatePct, windowLabel) {
   return [
     `*Campaign Drop Rate*`,
-    `• ${campaignDisplayName} has a ${dropRatePct}% drop rate in the last ${WINDOW_MINUTES} minutes`,
+    `• ${campaignDisplayName} has a ${dropRatePct}% drop rate (${windowLabel})`,
   ].join("\n");
 }
 
@@ -181,11 +263,11 @@ async function postSlack(text) {
   return { skipped: false };
 }
 
-export async function runDropRateCheck({ force = FORCE } = {}) {
-  if (!force && !isWithinDropRateWindow()) {
-    const et = getEasternParts();
+export async function runDropRateCheck({ force = FORCE, now = new Date() } = {}) {
+  if (!force && !isWithinDropRateWindow(now)) {
+    const et = getEasternParts(now);
     console.log(
-      `[nlmDropRate] Outside 9am–6pm ET window (${String(et.hour).padStart(2, "0")}:${String(et.minute).padStart(2, "0")} ET) — skipping`
+      `[nlmDropRate] Outside 9:30am–5:00pm ET window (${String(et.hour).padStart(2, "0")}:${String(et.minute).padStart(2, "0")} ET) — skipping`
     );
     return { skipped: true, reason: "outside_window" };
   }
@@ -199,15 +281,18 @@ export async function runDropRateCheck({ force = FORCE } = {}) {
     throw new Error("Missing Ringba token (RINGBA_API_TOKEN or username/password)");
   }
 
-  const { reportStart, reportEnd } = lastWindowIso();
-  console.log(`[nlmDropRate] Window ${reportStart} → ${reportEnd} (last ${WINDOW_MINUTES}m)`);
+  const window = previousHalfHourWindowEt(now);
+  const { reportStart, reportEnd, label } = window;
+  console.log(
+    `[nlmDropRate] Window ${reportStart} → ${reportEnd} (${label}, ${WINDOW_MINUTES}m aligned)`
+  );
 
   const byCampaign = await fetchCampaignTargetCounts(token, reportStart, reportEnd);
   const results = [];
 
   if (byCampaign.size === 0) {
     console.log("[nlmDropRate] No campaign call volume in window.");
-    return { skipped: false, alerts: [], results };
+    return { skipped: false, window, alerts: [], results };
   }
 
   for (const agg of byCampaign.values()) {
@@ -219,6 +304,7 @@ export async function runDropRateCheck({ force = FORCE } = {}) {
       total: agg.total,
       noValue: agg.noValue,
       dropRatePct,
+      windowLabel: label,
       alerted: false,
       skipReason: null,
     };
@@ -232,7 +318,7 @@ export async function runDropRateCheck({ force = FORCE } = {}) {
       continue;
     }
 
-    const text = buildSlackText(displayName, dropRatePct);
+    const text = buildSlackText(displayName, dropRatePct, label);
     const slack = await postSlack(text);
     row.alerted = !slack.skipped;
     row.skipReason = slack.skipped ? slack.reason : null;
@@ -245,6 +331,7 @@ export async function runDropRateCheck({ force = FORCE } = {}) {
 
   return {
     skipped: false,
+    window,
     alerts: results.filter((r) => r.alerted),
     results,
   };

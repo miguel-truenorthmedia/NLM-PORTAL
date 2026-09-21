@@ -66,13 +66,21 @@ export async function listBuyers() {
   return { buyers: rows.map(normalizeBuyer) };
 }
 
+function escapeRegex(value = "") {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export async function createBuyer(body) {
   requireMongo();
   const payload = parseBuyerPayload(body, { requireEmail: true });
 
-  const existing = await Buyer.findOne({ name: payload.name }).lean();
+  const existing = await Buyer.findOne({
+    name: { $regex: `^${escapeRegex(payload.name)}$`, $options: "i" },
+  }).lean();
   if (existing) {
-    throw new Error(`Buyer "${payload.name}" already exists`);
+    throw new Error(
+      `"${existing.name}" is already on the buyers list. Select it from the suggestions to update.`
+    );
   }
 
   const created = await Buyer.create({
@@ -109,11 +117,13 @@ export async function updateBuyer(id, body) {
   }
 
   const duplicate = await Buyer.findOne({
-    name: payload.name,
+    name: { $regex: `^${escapeRegex(payload.name)}$`, $options: "i" },
     _id: { $ne: id },
   }).lean();
   if (duplicate) {
-    throw new Error(`Buyer "${payload.name}" already exists`);
+    throw new Error(
+      `"${duplicate.name}" is already on the buyers list. Select it from the suggestions to update.`
+    );
   }
 
   const saved = await Buyer.findByIdAndUpdate(id, { $set: next }, { new: true }).lean();

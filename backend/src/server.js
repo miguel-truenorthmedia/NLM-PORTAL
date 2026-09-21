@@ -9,6 +9,7 @@ import { requireAuth, requireAdmin, requireTodoOwner, forbidMediaBuyer } from ".
 import { startBigoControllerSyncJob } from "./jobs/bigoControllerSyncJob.js";
 import { startCampaignSyncJob } from "./jobs/campaignSyncJob.js";
 import { startInvoiceAlertJob } from "./jobs/invoiceAlertJob.js";
+import { startOutreachPipelineJob } from "./jobs/outreachPipelineJob.js";
 import { startReconciliationSyncJob } from "./jobs/reconciliationSyncJob.js";
 import { startRingbaBillingSyncJob } from "./jobs/ringbaBillingSyncJob.js";
 import { hasBigoAdsConfig } from "./services/bigoClient.js";
@@ -95,6 +96,7 @@ async function start() {
     startCampaignSyncJob();
     startRingbaBillingSyncJob();
     startInvoiceAlertJob();
+    startOutreachPipelineJob();
     if (hasBigoAdsConfig()) {
       startBigoControllerSyncJob();
     }

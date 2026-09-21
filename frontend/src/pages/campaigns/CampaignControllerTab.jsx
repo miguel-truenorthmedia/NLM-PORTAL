@@ -342,6 +342,14 @@ export default function CampaignControllerTab() {
   const [loadingMeta, setLoadingMeta] = useState(true);
   const [loadingCampaigns, setLoadingCampaigns] = useState(false);
   const [loadingLive, setLoadingLive] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(() => {
+    try {
+      return localStorage.getItem("bigoControllerAutoRefresh") === "1";
+    } catch {
+      return false;
+    }
+  });
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -449,17 +457,22 @@ export default function CampaignControllerTab() {
   }, [bootstrap]);
 
   useEffect(() => {
+    try {
+      localStorage.setItem("bigoControllerAutoRefresh", autoRefresh ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [autoRefresh]);
+
+  useEffect(() => {
+    if (!autoRefresh) return undefined;
     const id = setInterval(() => {
-      // Keep the open tab on live data at least every 1 minute.
-      // If backend cron just wrote a fresh snapshot (<90s), only re-read it.
-      // Otherwise force a BIGO/Ringba pull so we never sit on stale numbers.
-      const fetchedAt = liveFetchedAtRef.current;
-      const ageMs = fetchedAt ? Date.now() - new Date(fetchedAt).getTime() : Number.POSITIVE_INFINITY;
-      const snapshotIsFresh = Number.isFinite(ageMs) && ageMs < 90_000;
-      loadLive({ refresh: !snapshotIsFresh, quiet: true });
+      // Snapshot-only — never force a live BIGO pull on the timer (that caused 504s).
+      // Background cron refreshes Mongo; this just re-reads it.
+      loadLive({ refresh: false, quiet: true });
     }, 60 * 1000);
     return () => clearInterval(id);
-  }, [loadLive]);
+  }, [autoRefresh, loadLive]);
 
   useEffect(() => {
     if (!settingsOpen) return undefined;
@@ -816,8 +829,16 @@ export default function CampaignControllerTab() {
 
   const toggleAdsetPause = async (row) => {
     const nextPaused = !row.paused;
+    const prevPaused = Boolean(row.paused);
     setBusyAdsetId(row.id);
     setError("");
+    // Optimistic UI — don't wait on a full controller refresh.
+    setLive((prev) => ({
+      ...prev,
+      adsets: (prev.adsets || []).map((a) =>
+        String(a.id) === String(row.id) ? { ...a, paused: nextPaused } : a
+      ),
+    }));
     try {
       await setBigoAdsetPaused({
         advertiserId: row.advertiserId,
@@ -828,8 +849,14 @@ export default function CampaignControllerTab() {
         nextPaused ? `Paused ${row.name}` : `Unpaused ${row.name} — now live`,
         "success"
       );
-      await loadLive({ quiet: true });
+      await loadLive({ refresh: false, quiet: true });
     } catch (err) {
+      setLive((prev) => ({
+        ...prev,
+        adsets: (prev.adsets || []).map((a) =>
+          String(a.id) === String(row.id) ? { ...a, paused: prevPaused } : a
+        ),
+      }));
       const msg = err.response?.data?.error || err.message || "Failed to update ad set status";
       setError(msg);
       pushToast(msg, "error");
@@ -854,7 +881,19 @@ export default function CampaignControllerTab() {
         `Updated ${row.name}: bid $${Number(basicGoalBid).toFixed(2)} · budget $${Number(budget).toFixed(2)}`,
         "success"
       );
-      await loadLive({ quiet: true });
+      setLive((prev) => ({
+        ...prev,
+        adsets: (prev.adsets || []).map((a) =>
+          String(a.id) === String(row.id)
+            ? {
+                ...a,
+                basicGoalBid: Number(basicGoalBid),
+                budget: Number(budget),
+              }
+            : a
+        ),
+      }));
+      await loadLive({ refresh: false, quiet: true });
     } catch (err) {
       const msg = err.response?.data?.error || err.message || "Failed to update bid/budget";
       setError(msg);
@@ -866,8 +905,18 @@ export default function CampaignControllerTab() {
 
   const toggleCampaignPause = async (row) => {
     const nextPaused = !row.paused;
+    const prevPaused = Boolean(row.paused);
     setBusyCampaignId(row.campaignId);
     setError("");
+    setLive((prev) => ({
+      ...prev,
+      campaigns: (prev.campaigns || []).map((c) =>
+        String(c.campaignId) === String(row.campaignId) &&
+        String(c.advertiserId) === String(row.advertiserId)
+          ? { ...c, paused: nextPaused }
+          : c
+      ),
+    }));
     try {
       await setBigoCampaignPaused({
         advertiserId: row.advertiserId,
@@ -880,8 +929,17 @@ export default function CampaignControllerTab() {
           : `Unpaused campaign ${row.campaignName || row.campaignId} — now live`,
         "success"
       );
-      await loadLive({ quiet: true });
+      await loadLive({ refresh: false, quiet: true });
     } catch (err) {
+      setLive((prev) => ({
+        ...prev,
+        campaigns: (prev.campaigns || []).map((c) =>
+          String(c.campaignId) === String(row.campaignId) &&
+          String(c.advertiserId) === String(row.advertiserId)
+            ? { ...c, paused: prevPaused }
+            : c
+        ),
+      }));
       const msg = err.response?.data?.error || err.message || "Failed to update campaign status";
       setError(msg);
       pushToast(msg, "error");
@@ -901,24 +959,61 @@ export default function CampaignControllerTab() {
     [tracked, hiddenCampaignKeys]
   );
 
+  const pausedByCampaignKey = useMemo(() => {
+    const map = new Map();
+    for (const camp of campaignCards) {
+      map.set(camp.key, Boolean(camp.paused));
+    }
+    return map;
+  }, [campaignCards]);
+
   return (
     <div className="bigo-controller">
       <div className="bigo-controller-header">
         <div className="bigo-controller-header-main">
           <h3>Campaign controller</h3>
           <p className="subtle">
-            Account → Campaign → Ad groups · Auto every 1 min · Updated {formatWhen(live.fetchedAt)}
+            Account → Campaign → Ad groups
+            {autoRefresh ? " · Auto refresh on (snapshot, 1 min)" : ""}
+            {" · "}
+            Updated {formatWhen(live.fetchedAt)}
           </p>
         </div>
         <div className="bigo-controller-header-actions">
-          <button
-            type="button"
-            className="btn btn-secondary btn-small"
-            disabled={loadingLive}
-            onClick={() => loadLive({ refresh: true })}
-          >
-            {loadingLive ? "Refreshing…" : "Refresh"}
-          </button>
+          <div className="bigo-refresh-group" role="group" aria-label="Refresh controls">
+            <button
+              type="button"
+              className={
+                autoRefresh
+                  ? "bigo-auto-refresh bigo-auto-refresh--on"
+                  : "bigo-auto-refresh"
+              }
+              aria-pressed={autoRefresh}
+              title={
+                autoRefresh
+                  ? "Auto refresh is on — re-reads the server snapshot every 1 min (no live BIGO pull)."
+                  : "Turn on auto refresh (re-read snapshot every 1 min)"
+              }
+              onClick={() => setAutoRefresh((v) => !v)}
+            >
+              AUTO REFRESH
+            </button>
+            <button
+              type="button"
+              className={loadingLive ? "bigo-refresh-icon-btn is-busy" : "bigo-refresh-icon-btn"}
+              disabled={loadingLive}
+              aria-label={loadingLive ? "Refreshing from BIGO" : "Refresh now from BIGO"}
+              title="Refresh now — live pull from BIGO (use sparingly)"
+              onClick={() => loadLive({ refresh: true })}
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 8 8h-2a6 6 0 1 1-1.76-4.24L14 10h6V4l-2.35 2.35Z"
+                />
+              </svg>
+            </button>
+          </div>
           <div className="bigo-settings" ref={settingsRef}>
             <button
               type="button"
@@ -1047,11 +1142,21 @@ export default function CampaignControllerTab() {
                 {tracked.map((row, index) => {
                   const key = campaignKey(row.advertiserId, row.campaignId);
                   const isHidden = hiddenCampaignKeys.has(key);
+                  const isPaused = Boolean(pausedByCampaignKey.get(key));
                   return (
                     <li
                       key={key}
                       className={isHidden ? "bigo-pebble bigo-pebble--hidden" : "bigo-pebble"}
                     >
+                      <span
+                        className={
+                          isPaused
+                            ? "bigo-pebble-status bigo-pebble-status--paused"
+                            : "bigo-pebble-status bigo-pebble-status--live"
+                        }
+                        title={isPaused ? "Paused" : "Live"}
+                        aria-label={isPaused ? "Paused" : "Live"}
+                      />
                       <span className="bigo-pebble-index">{index + 1}.</span>
                       <span className="bigo-pebble-text" title={row.advertiserName || ""}>
                         {row.campaignName || row.campaignId}

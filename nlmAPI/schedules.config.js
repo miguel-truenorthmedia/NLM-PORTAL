@@ -19,9 +19,10 @@ export default [
   },
   {
     script: "nlmDropRate.js",
-    schedule: "*/30 9-18 * * *",
+    // Fires :00/:30 from 9–17 ET; script gates to 9:30–17:00 and evaluates prior half hour
+    schedule: "0,30 9-17 * * *",
     timezone: "America/New_York",
     description:
-      "Campaign drop rate (-no value- / total) every 30 min, 9:00 AM–6:00 PM ET; Slack if total ≥ 20",
+      "Campaign drop rate (-no value- / total) every 30 min, 9:30 AM–5:00 PM ET; Slack if total ≥ 5",
   },
 ];

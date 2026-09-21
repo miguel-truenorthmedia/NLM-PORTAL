@@ -1,11 +1,17 @@
 import cron from "node-cron";
 import { hasBigoAdsConfig } from "../services/bigoClient.js";
 import { syncControllerLive } from "../services/bigoCampaignService.js";
+import { isCampaignSyncRunning } from "./campaignSyncJob.js";
 
 let isRunning = false;
 
 async function runBigoControllerSync() {
   if (!hasBigoAdsConfig()) {
+    return;
+  }
+  // Yield while 1 AM revenue/spend sync owns the ~1 QPS BIGO budget.
+  if (isCampaignSyncRunning()) {
+    console.warn("BIGO controller sync skipped — campaign spend sync in progress");
     return;
   }
   if (isRunning) {
@@ -28,12 +34,12 @@ async function runBigoControllerSync() {
 }
 
 export function startBigoControllerSyncJob() {
-  // Every 1 minute — light at current tracked scale (1 advertiser / ~17 adsets)
-  cron.schedule("* * * * *", () => {
+  // Every 3 minutes — leaves headroom under BIGO's ~1 QPS limit for manual toggles.
+  cron.schedule("*/3 * * * *", () => {
     runBigoControllerSync();
   });
 
-  console.log("BIGO controller sync scheduled every 1 minute");
+  console.log("BIGO controller sync scheduled every 3 minutes");
 
   // Seed snapshot shortly after boot so the page has data without a manual click
   setTimeout(() => {

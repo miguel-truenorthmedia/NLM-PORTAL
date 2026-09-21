@@ -1345,9 +1345,15 @@ export async function updateAdsetBidBudget({
   await bigoPost("/openapi/adset/update", body, { advertiserId });
 
   try {
-    await syncControllerLive();
+    await patchControllerSnapshotBidBudget({
+      advertiserId,
+      adsetId,
+      basicGoalBid: body.secondBid != null ? Number(body.secondBid) : undefined,
+      budget: body.budget != null ? Number(body.budget) : undefined,
+      budgetMode: body.budgetMode,
+    });
   } catch (err) {
-    console.warn("Snapshot refresh after adset bid/budget update failed:", err.message);
+    console.warn("Snapshot patch after adset bid/budget update failed:", err.message);
   }
 
   return {
@@ -1357,6 +1363,80 @@ export async function updateAdsetBidBudget({
     budget: body.budget != null ? Number(body.budget) : undefined,
     budgetMode: body.budgetMode,
   };
+}
+
+/**
+ * Patch paused flags in the Mongo controller snapshot (no BIGO report pull).
+ * Keeps pause/unpause fast so nginx never 504s waiting on a full live sync.
+ */
+async function patchControllerSnapshotStatus({
+  advertiserId,
+  adsetId,
+  campaignId,
+  paused,
+}) {
+  requireMongo();
+  const doc = await BigoControllerSnapshot.findOne({ key: "default" });
+  if (!doc) return;
+
+  let changed = false;
+  if (adsetId) {
+    const id = String(adsetId);
+    doc.adsets = (doc.adsets || []).map((row) => {
+      if (String(row.id) !== id) return row;
+      if (Boolean(row.paused) === Boolean(paused)) return row;
+      changed = true;
+      return { ...row, paused: Boolean(paused) };
+    });
+  }
+  if (campaignId) {
+    const id = String(campaignId);
+    const adv = String(advertiserId || "");
+    doc.campaigns = (doc.campaigns || []).map((row) => {
+      if (String(row.campaignId) !== id) return row;
+      if (adv && String(row.advertiserId) !== adv) return row;
+      if (Boolean(row.paused) === Boolean(paused)) return row;
+      changed = true;
+      return { ...row, paused: Boolean(paused) };
+    });
+  }
+
+  if (changed) {
+    doc.markModified("adsets");
+    doc.markModified("campaigns");
+    await doc.save();
+  }
+}
+
+async function patchControllerSnapshotBidBudget({
+  advertiserId,
+  adsetId,
+  basicGoalBid,
+  budget,
+  budgetMode,
+}) {
+  requireMongo();
+  const doc = await BigoControllerSnapshot.findOne({ key: "default" });
+  if (!doc) return;
+
+  const id = String(adsetId);
+  let changed = false;
+  doc.adsets = (doc.adsets || []).map((row) => {
+    if (String(row.id) !== id) return row;
+    if (advertiserId && String(row.advertiserId) !== String(advertiserId)) return row;
+    changed = true;
+    return {
+      ...row,
+      ...(basicGoalBid != null ? { basicGoalBid: Number(basicGoalBid) } : {}),
+      ...(budget != null ? { budget: Number(budget) } : {}),
+      ...(budgetMode != null ? { budgetMode: Number(budgetMode) } : {}),
+    };
+  });
+
+  if (changed) {
+    doc.markModified("adsets");
+    await doc.save();
+  }
 }
 
 /**
@@ -1375,11 +1455,14 @@ export async function setAdsetPaused({ advertiserId, adsetId, paused }) {
     { advertiserId }
   );
 
-  // Refresh snapshot so UI picks up new status
   try {
-    await syncControllerLive();
+    await patchControllerSnapshotStatus({
+      advertiserId,
+      adsetId,
+      paused: Boolean(paused),
+    });
   } catch (err) {
-    console.warn("Snapshot refresh after adset status change failed:", err.message);
+    console.warn("Snapshot patch after adset status change failed:", err.message);
   }
 
   return { ok: true, adsetId: String(adsetId), paused: Boolean(paused), status };
@@ -1402,9 +1485,13 @@ export async function setCampaignPaused({ advertiserId, campaignId, paused }) {
   );
 
   try {
-    await syncControllerLive();
+    await patchControllerSnapshotStatus({
+      advertiserId,
+      campaignId,
+      paused: Boolean(paused),
+    });
   } catch (err) {
-    console.warn("Snapshot refresh after campaign status change failed:", err.message);
+    console.warn("Snapshot patch after campaign status change failed:", err.message);
   }
 
   return { ok: true, campaignId: String(campaignId), paused: Boolean(paused), status };

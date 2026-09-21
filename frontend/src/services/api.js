@@ -114,9 +114,16 @@ export async function deleteBuyer(id) {
   return response.data;
 }
 
-export async function fetchOutreachProspects({ archived = false } = {}) {
+export async function fetchOutreachProspects({ archived = false, view } = {}) {
+  const params = {};
+  if (archived || view === "archived" || view === "archive") {
+    params.archived = true;
+    params.view = "archived";
+  } else if (view) {
+    params.view = view;
+  }
   const response = await api.get("/outreach", {
-    params: archived ? { archived: true } : undefined,
+    params: Object.keys(params).length ? params : undefined,
   });
   return response.data;
 }
@@ -133,6 +140,11 @@ export async function updateOutreachProspect(id, payload) {
 
 export async function addOutreachNote(id, payload) {
   const response = await api.post(`/outreach/${id}/notes`, payload);
+  return response.data;
+}
+
+export async function setOutreachNoteIgnored(id, noteId, ignored) {
+  const response = await api.post(`/outreach/${id}/notes/${noteId}/ignore`, { ignored });
   return response.data;
 }
 
@@ -188,6 +200,8 @@ export async function saveBigoTracked(campaigns) {
 export async function fetchBigoControllerLive({ refresh = false } = {}) {
   const response = await api.get("/bigo/controller-live", {
     params: refresh ? { refresh: 1 } : undefined,
+    // Live BIGO pull can take a while under rate limits; snapshot reads stay snappy.
+    timeout: refresh ? 120_000 : 20_000,
   });
   return response.data;
 }
