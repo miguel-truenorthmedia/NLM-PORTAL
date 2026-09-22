@@ -95,6 +95,23 @@ function MetricUpTrend({ deltaPct }) {
   );
 }
 
+function CollapseChevron({ collapsed }) {
+  return (
+    <span
+      className={
+        collapsed
+          ? "bigo-collapse-chevron bigo-collapse-chevron--collapsed"
+          : "bigo-collapse-chevron"
+      }
+      aria-hidden="true"
+    >
+      <svg viewBox="0 0 24 24" width="18" height="18">
+        <path fill="currentColor" d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z" />
+      </svg>
+    </span>
+  );
+}
+
 let toastSeq = 0;
 
 function ToastStack({ toasts, onDismiss }) {
@@ -370,6 +387,26 @@ export default function CampaignControllerTab() {
       return new Set();
     }
   });
+  /** advertiserIds that are collapsed (campaigns + ad groups hidden) */
+  const [collapsedAccountIds, setCollapsedAccountIds] = useState(() => {
+    try {
+      const raw = localStorage.getItem("bigo-controller-collapsed-accounts");
+      const list = raw ? JSON.parse(raw) : [];
+      return new Set(Array.isArray(list) ? list.map(String) : []);
+    } catch {
+      return new Set();
+    }
+  });
+  /** campaign keys that are collapsed (ad groups hidden) */
+  const [collapsedCampaignKeys, setCollapsedCampaignKeys] = useState(() => {
+    try {
+      const raw = localStorage.getItem("bigo-controller-collapsed-campaigns");
+      const list = raw ? JSON.parse(raw) : [];
+      return new Set(Array.isArray(list) ? list.map(String) : []);
+    } catch {
+      return new Set();
+    }
+  });
 
   const dismissToast = useCallback((id) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -639,6 +676,38 @@ export default function CampaignControllerTab() {
           "bigo-controller-hidden-campaigns",
           JSON.stringify([...next])
         );
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
+
+  const toggleAccountCollapsed = (advertiserId) => {
+    const id = String(advertiserId || "");
+    if (!id) return;
+    setCollapsedAccountIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        localStorage.setItem("bigo-controller-collapsed-accounts", JSON.stringify([...next]));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
+
+  const toggleCampaignCollapsed = (key) => {
+    const id = String(key || "");
+    if (!id) return;
+    setCollapsedCampaignKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        localStorage.setItem("bigo-controller-collapsed-campaigns", JSON.stringify([...next]));
       } catch {
         /* ignore */
       }
@@ -1219,15 +1288,52 @@ export default function CampaignControllerTab() {
               <p className="subtle">No metrics found for tracked campaigns.</p>
             ) : (
               <div className="bigo-funnel">
-                {funnelByAccount.map(({ account, campaigns }) => (
-                  <div key={account.advertiserId} className="bigo-funnel-account">
-                    <div className="bigo-account-summary">
+                {funnelByAccount.map(({ account, campaigns }) => {
+                  const accountId = String(account.advertiserId || "");
+                  const accountCollapsed = collapsedAccountIds.has(accountId);
+                  return (
+                  <div
+                    key={account.advertiserId}
+                    className={
+                      accountCollapsed
+                        ? "bigo-funnel-account bigo-funnel-account--collapsed"
+                        : "bigo-funnel-account"
+                    }
+                  >
+                    <div
+                      className="bigo-account-summary bigo-summary-toggle"
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={!accountCollapsed}
+                      aria-label={
+                        accountCollapsed
+                          ? `Expand account ${account.advertiserName || account.advertiserId}`
+                          : `Collapse account ${account.advertiserName || account.advertiserId}`
+                      }
+                      onClick={() => toggleAccountCollapsed(accountId)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          toggleAccountCollapsed(accountId);
+                        }
+                      }}
+                    >
                       <div className="bigo-account-summary-meta">
-                        <span className="bigo-level-tag bigo-level-tag--account">Account</span>
-                        <h4 className="bigo-account-summary-name">
-                          {account.advertiserName || account.advertiserId}
-                        </h4>
-                        <span className="subtle">Today · all tracked campaigns</span>
+                        <div className="bigo-summary-title-row">
+                          <CollapseChevron collapsed={accountCollapsed} />
+                          <div className="bigo-summary-title-text">
+                            <span className="bigo-level-tag bigo-level-tag--account">Account</span>
+                            <h4 className="bigo-account-summary-name">
+                              {account.advertiserName || account.advertiserId}
+                            </h4>
+                            <span className="subtle">
+                              Today · all tracked campaigns
+                              {accountCollapsed
+                                ? ` · ${campaigns.length} campaign${campaigns.length === 1 ? "" : "s"} hidden`
+                                : ""}
+                            </span>
+                          </div>
+                        </div>
                       </div>
                       <div className="bigo-account-summary-stats">
                         <SummaryStat label="Revenue" value={money(account.revenue, account.currency)} />
@@ -1288,28 +1394,58 @@ export default function CampaignControllerTab() {
                       </div>
                     </div>
 
+                    {!accountCollapsed ? (
                     <div className="bigo-funnel-campaigns">
                       {campaigns.map((camp) => {
                         const busy = busyCampaignId === camp.campaignId;
+                        const campaignCollapsed = collapsedCampaignKeys.has(camp.key);
                         return (
                           <div
                             key={camp.key}
-                            className={
-                              camp.paused
-                                ? "bigo-funnel-campaign bigo-funnel-campaign--paused"
-                                : "bigo-funnel-campaign"
-                            }
+                            className={[
+                              "bigo-funnel-campaign",
+                              camp.paused ? "bigo-funnel-campaign--paused" : "",
+                              campaignCollapsed ? "bigo-funnel-campaign--collapsed" : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" ")}
                           >
                             <div
-                              className={
-                                camp.paused
-                                  ? "bigo-campaign-summary bigo-campaign-summary--paused"
-                                  : "bigo-campaign-summary"
+                              className={[
+                                "bigo-campaign-summary",
+                                "bigo-summary-toggle",
+                                camp.paused ? "bigo-campaign-summary--paused" : "",
+                              ]
+                                .filter(Boolean)
+                                .join(" ")}
+                              role="button"
+                              tabIndex={0}
+                              aria-expanded={!campaignCollapsed}
+                              aria-label={
+                                campaignCollapsed
+                                  ? `Expand campaign ${camp.name}`
+                                  : `Collapse campaign ${camp.name}`
                               }
+                              onClick={() => toggleCampaignCollapsed(camp.key)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  toggleCampaignCollapsed(camp.key);
+                                }
+                              }}
                             >
                               <div className="bigo-campaign-summary-left">
-                                <span className="bigo-level-tag bigo-level-tag--campaign">Campaign</span>
-                                <div className="bigo-campaign-summary-name">{camp.name}</div>
+                                <CollapseChevron collapsed={campaignCollapsed} />
+                                <div className="bigo-summary-title-text">
+                                  <span className="bigo-level-tag bigo-level-tag--campaign">Campaign</span>
+                                  <div className="bigo-campaign-summary-name">{camp.name}</div>
+                                  {campaignCollapsed ? (
+                                    <span className="subtle">
+                                      {camp.adsets.length} ad group
+                                      {camp.adsets.length === 1 ? "" : "s"} hidden
+                                    </span>
+                                  ) : null}
+                                </div>
                               </div>
                               <div className="bigo-campaign-summary-stats">
                                 <SummaryStat label="Revenue" value={money(camp.revenue, camp.currency)} />
@@ -1368,7 +1504,11 @@ export default function CampaignControllerTab() {
                                   deltaPct={camp.cpcDeltaPct}
                                 />
                               </div>
-                              <div className="bigo-campaign-summary-actions">
+                              <div
+                                className="bigo-campaign-summary-actions"
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => e.stopPropagation()}
+                              >
                                 <button
                                   type="button"
                                   className="bigo-visibility-btn"
@@ -1397,6 +1537,7 @@ export default function CampaignControllerTab() {
                               </div>
                             </div>
 
+                            {!campaignCollapsed ? (
                             <div className="bigo-funnel-adgroups">
                               <div className="bigo-funnel-adgroups-head">
                                 <span className="bigo-level-tag bigo-level-tag--adgroup">Ad groups</span>
@@ -1445,12 +1586,15 @@ export default function CampaignControllerTab() {
                                 <p className="subtle">No ad groups for this campaign.</p>
                               )}
                             </div>
+                            ) : null}
                           </div>
                         );
                       })}
                     </div>
+                    ) : null}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </section>
