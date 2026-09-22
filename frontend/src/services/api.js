@@ -114,6 +114,33 @@ export async function deleteBuyer(id) {
   return response.data;
 }
 
+/** QuickBooks integration (admin/CEO) — never returns tokens */
+export async function fetchQuickBooksStatus() {
+  const response = await api.get("/integrations/quickbooks/status");
+  return response.data;
+}
+
+export async function fetchQuickBooksInvoices({ limit = 1000 } = {}) {
+  const response = await api.get("/integrations/quickbooks/invoices", {
+    params: { limit },
+  });
+  return response.data;
+}
+
+export async function fetchQuickBooksInvoice(invoiceId) {
+  const response = await api.get(
+    `/integrations/quickbooks/invoices/${encodeURIComponent(invoiceId)}`
+  );
+  return response.data;
+}
+
+export async function startQuickBooksConnect() {
+  const response = await api.get("/integrations/quickbooks/connect", {
+    params: { format: "json" },
+  });
+  return response.data;
+}
+
 export async function fetchOutreachProspects({ archived = false, view } = {}) {
   const params = {};
   if (archived || view === "archived" || view === "archive") {

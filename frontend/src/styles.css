@@ -404,7 +404,7 @@ body {
   border-radius: 999px;
   font-size: 0.8rem;
   font-weight: 700;
-  text-transform: capitalize;
+  text-transform: none;
 }
 
 .invoice-status--paid {
@@ -425,6 +425,231 @@ body {
 .invoice-status--overdue {
   color: var(--trend-negative);
   background: color-mix(in srgb, var(--trend-negative) 16%, transparent);
+}
+
+.invoice-status--due-today {
+  color: #ca8a04;
+  background: color-mix(in srgb, #ca8a04 16%, transparent);
+}
+
+.invoices-page .section-head {
+  margin-bottom: 0.75rem;
+}
+
+.invoices-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.invoices-kpi-grid {
+  margin: 0.75rem 0 1rem;
+}
+
+.invoices-kpi-meta {
+  margin: 0.15rem 0 0;
+  font-size: 0.8rem;
+}
+
+.invoices-kpi-skeleton .kpi-value {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.invoices-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  padding: 0.85rem 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.invoices-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.invoices-filters select,
+.invoices-filters input {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+}
+
+.invoices-table th,
+.invoices-table td {
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.invoices-table td:nth-child(2) {
+  white-space: normal;
+  min-width: 140px;
+}
+
+.invoices-days-meta {
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+}
+
+.invoices-footer {
+  margin: 0.65rem 0 0;
+  padding: 0 0.15rem;
+}
+
+.invoices-connect-card {
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.invoices-connect-card h4 {
+  margin: 0 0 0.35rem;
+}
+
+@media (max-width: 800px) {
+  .invoices-filters {
+    grid-template-columns: 1fr;
+  }
+}
+
+.invoices-table-row--clickable {
+  cursor: pointer;
+}
+
+.invoices-table-row--clickable:hover,
+.invoices-table-row--clickable:focus-visible {
+  background: color-mix(in srgb, var(--accent, #0d9488) 10%, transparent);
+  outline: none;
+}
+
+.invoices-doc-link {
+  color: var(--accent, #0d9488);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.invoice-detail-crumb {
+  margin: 0 0 0.25rem;
+}
+
+.invoice-detail-crumb a {
+  color: var(--accent, #0d9488);
+}
+
+.invoice-detail-loading {
+  padding: 1.25rem;
+}
+
+.invoice-detail-header {
+  padding: 1rem 1.15rem;
+  margin-bottom: 0.85rem;
+}
+
+.invoice-detail-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.invoice-detail-title-row h4 {
+  margin: 0;
+}
+
+.invoice-detail-customer-name {
+  margin: 0.45rem 0 0;
+  font-size: 1.05rem;
+}
+
+.invoice-detail-due-hint {
+  margin: 0.25rem 0 0;
+}
+
+.invoice-detail-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.invoice-detail-summary-grid .kpi-value--sm {
+  font-size: 1.15rem;
+}
+
+.invoice-detail-balance-card .kpi-value {
+  font-size: 1.45rem;
+}
+
+.invoice-detail-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 0.85rem;
+}
+
+.invoice-detail-section {
+  padding: 1rem 1.15rem;
+  margin-bottom: 0.85rem;
+}
+
+.invoice-detail-section h4 {
+  margin: 0 0 0.65rem;
+}
+
+.invoice-detail-dl {
+  margin: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.invoice-detail-dl dt {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: 0 0 0.15rem;
+}
+
+.invoice-detail-dl dd {
+  margin: 0;
+}
+
+.invoice-detail-note + .invoice-detail-note {
+  margin-top: 0.85rem;
+}
+
+.invoice-detail-note-label {
+  margin: 0 0 0.25rem;
+  font-weight: 600;
+}
+
+.invoice-detail-note p:last-child {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.invoice-lines-table th,
+.invoice-lines-table td {
+  vertical-align: top;
+}
+
+.invoice-lines-table td:first-child {
+  min-width: 180px;
+  white-space: normal;
+}
+
+@media (max-width: 960px) {
+  .invoice-detail-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .invoice-detail-columns {
+    grid-template-columns: 1fr;
+  }
 }
 
 .section-head {

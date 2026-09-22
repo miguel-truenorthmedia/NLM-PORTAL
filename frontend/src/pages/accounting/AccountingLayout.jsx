@@ -23,7 +23,10 @@ export default function AccountingLayout() {
           <NavLink
             key={tab.to}
             to={tab.to}
-            className={({ isActive }) => (isActive ? "accounting-tab accounting-tab--active" : "accounting-tab")}
+            end={tab.to !== "/accounting/invoices"}
+            className={({ isActive }) =>
+              isActive ? "accounting-tab accounting-tab--active" : "accounting-tab"
+            }
           >
             {tab.label}
           </NavLink>

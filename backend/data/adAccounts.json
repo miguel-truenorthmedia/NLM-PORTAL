@@ -9,5 +9,16 @@
     "offerType": "FE",
     "trafficSourceId": "bigo",
     "bigoAccountId": "325558"
+  },
+  {
+    "id": "franz-medi-1",
+    "displayName": "Franz - Medi - 1",
+    "publisherName": "Franz",
+    "ringbaCampaignName": "NLM - Medicare",
+    "ringbaAccountTag": "Franz-NLM-Medi-1",
+    "campaignId": "CA77168e7c224c4bcb90a8553ef1a1c9d9",
+    "offerType": "Medicare",
+    "trafficSourceId": "bigo",
+    "bigoAccountId": "345722"
   }
 ]

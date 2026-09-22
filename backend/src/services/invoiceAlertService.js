@@ -1,4 +1,5 @@
-import { hasQuickBooksConfig, hasSlackInvoiceWebhook } from "../config.js";
+import { hasSlackInvoiceWebhook } from "../config.js";
+import { isQuickBooksReady } from "./quickbooksClient.js";
 import { fetchInvoiceAlertBuckets } from "./quickbooksInvoiceService.js";
 import { postSlackInvoiceAlert } from "./slackService.js";
 
@@ -52,9 +53,9 @@ function buildSlackPayload({ asOfDate, tomorrowDate, overdue, dueTomorrow }) {
  * @param {{ dryRun?: boolean, notifyWhenClear?: boolean }} options
  */
 export async function runInvoiceDueAlerts({ dryRun = false, notifyWhenClear = false } = {}) {
-  if (!hasQuickBooksConfig) {
+  if (!(await isQuickBooksReady())) {
     throw new Error(
-      "QuickBooks is not configured. Set QBO_CLIENT_ID, QBO_CLIENT_SECRET, QBO_REFRESH_TOKEN, and QBO_REALM_ID."
+      "QuickBooks is not connected. Complete OAuth via /api/integrations/quickbooks/connect (or set legacy QBO_REFRESH_TOKEN + QBO_REALM_ID)."
     );
   }
 

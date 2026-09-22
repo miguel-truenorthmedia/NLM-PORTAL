@@ -35,6 +35,15 @@ export function requireAdmin(req, res, next) {
   return next();
 }
 
+/** Admin or CEO — for financial integrations like QuickBooks */
+export function requireAdminOrCeo(req, res, next) {
+  const role = String(req.user?.role || "").toLowerCase();
+  if (!req.user || (role !== "admin" && role !== "ceo")) {
+    return res.status(403).json({ error: "Admin or CEO access required" });
+  }
+  return next();
+}
+
 export function requireCeo(req, res, next) {
   if (!req.user || String(req.user.role || "").toLowerCase() !== "ceo") {
     return res.status(403).json({ error: "CEO access required" });

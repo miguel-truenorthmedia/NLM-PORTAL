@@ -50,7 +50,23 @@ function buildPayload({ reportStart, reportEnd, campaignId, accountTag }) {
   };
 }
 
-function extractRollupRecord(records = []) {
+function extractRollupRecord(records = [], { accountTag } = {}) {
+  const tag = String(accountTag || "").trim();
+  if (tag) {
+    const tagged = records.find(
+      (record) => String(record["tag:User:account"] || "").trim() === tag
+    );
+    if (!tagged) return null;
+    return {
+      calls: parseNumber(tagged.callCount),
+      convertedCalls: parseNumber(tagged.convertedCalls),
+      revenue: parseNumber(tagged.conversionAmount),
+      convertedPercent: parseNumber(tagged.convertedPercent),
+      payoutAmount: parseNumber(tagged.payoutAmount),
+    };
+  }
+
+  // No account tag: use blank rollup only (avoid picking a random tagged row).
   const rollup = [...records].reverse().find((record) => !record["tag:User:account"]);
   if (!rollup) return null;
   return {
@@ -85,7 +101,7 @@ export async function fetchInsightsRollup({ startDate, endDate, campaignId, acco
   const payload = buildPayload({ ...window, campaignId, accountTag });
   const data = await ringbaPost("/insights", payload);
   const records = data?.report?.records || [];
-  return extractRollupRecord(records);
+  return extractRollupRecord(records, { accountTag });
 }
 
 function delay(ms) {
@@ -101,7 +117,7 @@ export async function fetchDailyInsightsRollups({ startDate, endDate, campaignId
     const payload = buildPayload({ ...window, campaignId, accountTag });
     try {
       const data = await ringbaPost("/insights", payload);
-      const rollup = extractRollupRecord(data?.report?.records || []);
+      const rollup = extractRollupRecord(data?.report?.records || [], { accountTag });
       if (rollup) results.push({ date, ...rollup });
     } catch (error) {
       console.warn(`Ringba insights failed for ${date}:`, error.message);

@@ -178,8 +178,12 @@ export function resolveRingbaFilters({ linkedAccount, advertiserName } = {}) {
   if (!offerType) {
     if (/\bFE\b|final\s*expense/i.test(name)) offerType = "FE";
     else if (/\bACA\b/i.test(name)) offerType = "ACA";
-    else if (/medicare/i.test(name)) offerType = "MEDICARE";
+    else if (/medicare|\bmedi\b|medi-/i.test(name)) offerType = "MEDICARE";
   }
+
+  // Normalize FE / Medicare aliases used in adAccounts.json
+  if (offerType === "MEDICARE" || offerType === "MEDI") offerType = "MEDICARE";
+
 
   const campaignName =
     String(linkedAccount?.ringbaCampaignName || "").trim() ||
@@ -196,33 +200,33 @@ export function resolveRingbaFilters({ linkedAccount, advertiserName } = {}) {
 }
 
 /**
- * Account-level Ringba rollup: filter by publisherName + campaignName (insights).
- * Matches Ringba UI filters: Publisher EQUALS Franz AND Campaign EQUALS NLM - Final Expense.
+ * Account-level Ringba rollup for a BIGO advertiser.
+ *
+ * Ringba /insights often ignores filter clauses and still returns every campaign
+ * plus a blank grand-total rollup. Never trust that blank rollup when we know the
+ * Ringba campaign name — pick the matching campaign row (same numbers as Ringba UI).
  */
-async function fetchRingbaAccountInsights({ dayYmd, publisherName, campaignName }) {
-  if (!hasRingbaConfig || !publisherName || !campaignName) {
+async function fetchRingbaAccountInsights({
+  dayYmd,
+  publisherName,
+  campaignName,
+  ringbaAccountTag = "",
+}) {
+  if (!hasRingbaConfig) {
+    return { incomingCalls: 0, revenue: 0 };
+  }
+
+  const targetCampaign = String(campaignName || "").trim();
+  const targetTag = String(ringbaAccountTag || "").trim();
+  if (!targetCampaign && !targetTag && !publisherName) {
     return { incomingCalls: 0, revenue: 0 };
   }
 
   const { reportStart, reportEnd } = etDayWindow(dayYmd);
-  const payload = {
+
+  const basePayload = {
     reportStart,
     reportEnd,
-    filters: [
-      {
-        column: "publisherName",
-        value: publisherName,
-        isNegativeMatch: false,
-        comparisonType: "EQUALS",
-      },
-      {
-        column: "campaignName",
-        value: campaignName,
-        isNegativeMatch: false,
-        comparisonType: "EQUALS",
-      },
-    ],
-    groupByColumns: [{ column: "publisherName", displayName: "Publisher" }],
     orderByColumns: [{ column: "callCount", direction: "desc" }],
     valueColumns: [
       { column: "callCount", aggregateFunction: null },
@@ -238,30 +242,53 @@ async function fetchRingbaAccountInsights({ dayYmd, publisherName, campaignName 
     maxResultsPerGroup: 1000,
   };
 
-  const data = await ringbaPost("/insights", payload);
-  const records = data?.report?.records || [];
-
-  // Prefer rollup row (no publisherName / empty); else sum matching publisher rows
-  const rollup = [...records]
-    .reverse()
-    .find((r) => !r.publisherName || String(r.publisherName).trim() === "");
-  if (rollup) {
-    return {
-      incomingCalls: parseNumber(rollup.callCount),
-      revenue: parseNumber(rollup.conversionAmount),
-    };
-  }
-
-  let incomingCalls = 0;
-  let revenue = 0;
-  for (const row of records) {
-    if (String(row.publisherName || "").trim().toLowerCase() !== publisherName.toLowerCase()) {
-      continue;
+  // 1) Prefer exact Ringba campaign row (matches Campaign tab in Ringba UI)
+  if (targetCampaign) {
+    try {
+      const data = await ringbaPost("/insights", {
+        ...basePayload,
+        filters: [],
+        groupByColumns: [{ column: "campaignName", displayName: "Campaign" }],
+      });
+      const records = data?.report?.records || [];
+      const match = records.find(
+        (r) => String(r.campaignName || "").trim().toLowerCase() === targetCampaign.toLowerCase()
+      );
+      if (match) {
+        return {
+          incomingCalls: parseNumber(match.callCount),
+          revenue: parseNumber(match.conversionAmount),
+        };
+      }
+    } catch (err) {
+      console.warn("Ringba campaign-name insights failed:", err.message);
     }
-    incomingCalls += parseNumber(row.callCount);
-    revenue += parseNumber(row.conversionAmount);
   }
-  return { incomingCalls, revenue };
+
+  // 2) Fall back to account-tag row (Overview-style). Skip blank "-no value-" / rollup.
+  if (targetTag) {
+    try {
+      const data = await ringbaPost("/insights", {
+        ...basePayload,
+        filters: [],
+        groupByColumns: [{ column: "tag:User:account", displayName: "User:account" }],
+      });
+      const records = data?.report?.records || [];
+      const match = records.find(
+        (r) => String(r["tag:User:account"] || "").trim() === targetTag
+      );
+      if (match) {
+        return {
+          incomingCalls: parseNumber(match.callCount),
+          revenue: parseNumber(match.conversionAmount),
+        };
+      }
+    } catch (err) {
+      console.warn("Ringba account-tag insights failed:", err.message);
+    }
+  }
+
+  return { incomingCalls: 0, revenue: 0 };
 }
 
 /**
@@ -707,6 +734,7 @@ export async function getControllerLive() {
         dayYmd: day,
         publisherName: ringbaFilters.publisherName,
         campaignName: ringbaFilters.campaignName,
+        ringbaAccountTag: ringbaFilters.ringbaAccountTag,
       });
     } catch (err) {
       console.warn("Ringba account insights failed:", err.message);
@@ -1004,8 +1032,8 @@ export async function getControllerLive() {
   const accountsOut = [...accountAgg.values()].map((acc) => {
     const campaignCount = tracked.filter((t) => t.advertiserId === acc.advertiserId).length;
     const ringba = accountRingbaById.get(acc.advertiserId);
-    // Account-level Ringba insights are authoritative when publisher+campaign filters resolve
-    const hasInsights = Boolean(ringba?.publisherName && ringba?.campaignName);
+    // Account-level Ringba insights are authoritative when a campaign/tag mapping resolves
+    const hasInsights = Boolean(ringba?.campaignName || ringba?.ringbaAccountTag);
     const incomingCalls = hasInsights
       ? Number(ringba.incomingCalls) || 0
       : Number(acc.incomingCalls) || 0;

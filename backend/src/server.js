@@ -1,7 +1,7 @@
 import cors from "cors";
 import express from "express";
 
-import { config, hasAuthConfig, hasMongoConfig, hasQuickBooksConfig } from "./config.js";
+import { config, hasAuthConfig, hasMongoConfig, hasQuickBooksAppConfig } from "./config.js";
 import { connectMongo } from "./db/mongo.js";
 import { migrateLegacySpendToMongo } from "./services/campaignSpendService.js";
 import { importCompanyExpenseSeed } from "./services/pnlService.js";
@@ -20,6 +20,7 @@ import campaignRoutes from "./routes/campaignRoutes.js";
 import invoiceAlertRoutes from "./routes/invoiceAlertRoutes.js";
 import outreachRoutes from "./routes/outreachRoutes.js";
 import pnlRoutes from "./routes/pnlRoutes.js";
+import quickbooksIntegrationRoutes from "./routes/quickbooksIntegrationRoutes.js";
 import reconciliationRoutes from "./routes/reconciliationRoutes.js";
 import syncRoutes from "./routes/syncRoutes.js";
 import todoRoutes from "./routes/todoRoutes.js";
@@ -39,7 +40,7 @@ app.get("/api/health", (_req, res) => {
     useMongoDb: config.useMongoDb,
     mongoConnected: hasMongoConfig,
     authEnabled: hasAuthConfig,
-    quickBooksConfigured: hasQuickBooksConfig,
+    quickBooksConfigured: hasQuickBooksAppConfig,
   });
 });
 
@@ -53,6 +54,7 @@ app.use("/api/bigo", requireAuth, bigoRoutes);
 app.use("/api/todos", requireAuth, requireTodoOwner, todoRoutes);
 app.use("/api/accounting/pnl", requireAuth, forbidMediaBuyer, pnlRoutes);
 app.use("/api/accounting/invoice-alerts", requireAuth, requireAdmin, invoiceAlertRoutes);
+app.use("/api/integrations/quickbooks", quickbooksIntegrationRoutes);
 app.use("/api/sync", requireAuth, requireAdmin, syncRoutes);
 
 async function ensureAdminUser() {

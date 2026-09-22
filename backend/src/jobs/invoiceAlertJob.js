@@ -1,5 +1,6 @@
 import cron from "node-cron";
-import { hasQuickBooksConfig } from "../config.js";
+import { hasQuickBooksAppConfig } from "../config.js";
+import { isQuickBooksReady } from "../services/quickbooksClient.js";
 import { runInvoiceDueAlerts } from "../services/invoiceAlertService.js";
 
 /** Daily 8:00 AM Eastern — overdue + due-tomorrow Slack alerts. */
@@ -13,8 +14,8 @@ async function runScheduledInvoiceAlerts() {
     return;
   }
 
-  if (!hasQuickBooksConfig) {
-    console.warn("Invoice alert job skipped — QuickBooks env vars not set");
+  if (!(await isQuickBooksReady())) {
+    console.warn("Invoice alert job skipped — QuickBooks not connected");
     return;
   }
 
@@ -29,7 +30,7 @@ async function runScheduledInvoiceAlerts() {
       } (${result.durationMs}ms)`
     );
   } catch (error) {
-    console.error("Scheduled invoice alert job failed:", error);
+    console.error("Scheduled invoice alert job failed:", error.message);
   } finally {
     isRunning = false;
   }
@@ -46,7 +47,7 @@ export function startInvoiceAlertJob() {
 
   console.log(
     `Invoice due alerts scheduled (${CRON}, America/New_York)` +
-      (hasQuickBooksConfig ? "" : " — waiting for QBO credentials")
+      (hasQuickBooksAppConfig ? "" : " — waiting for QBO app credentials")
   );
 }
 

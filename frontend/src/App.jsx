@@ -13,6 +13,7 @@ import LoginPage from "./pages/LoginPage.jsx";
 import UsersPage from "./pages/UsersPage.jsx";
 import AccountingLayout from "./pages/accounting/AccountingLayout.jsx";
 import BuyersTab from "./pages/accounting/BuyersTab.jsx";
+import InvoiceDetailPage from "./pages/accounting/InvoiceDetailPage.jsx";
 import InvoicesTab from "./pages/accounting/InvoicesTab.jsx";
 import PnLHistoricalTab from "./pages/accounting/PnLHistoricalTab.jsx";
 import PnLTab from "./pages/accounting/PnLTab.jsx";
@@ -146,6 +147,7 @@ export default function App() {
         <Route path="reconciliation" element={<ReconciliationTab />} />
         <Route path="buyers" element={<BuyersTab />} />
         <Route path="invoices" element={<InvoicesTab />} />
+        <Route path="invoices/:invoiceId" element={<InvoiceDetailPage />} />
         <Route path="pnl" element={<PnLTab />} />
         <Route path="pnl-historical" element={<PnLHistoricalTab />} />
       </Route>

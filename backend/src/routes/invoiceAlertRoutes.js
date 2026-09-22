@@ -1,12 +1,14 @@
 import express from "express";
-import { hasQuickBooksConfig, hasSlackInvoiceWebhook } from "../config.js";
+import { hasQuickBooksAppConfig, hasSlackInvoiceWebhook } from "../config.js";
+import { isQuickBooksReady } from "../services/quickbooksClient.js";
 import { runInvoiceDueAlerts } from "../services/invoiceAlertService.js";
 
 const router = express.Router();
 
-router.get("/status", (_req, res) => {
+router.get("/status", async (_req, res) => {
   res.json({
-    quickBooksConfigured: hasQuickBooksConfig,
+    quickBooksAppConfigured: hasQuickBooksAppConfig,
+    quickBooksReady: await isQuickBooksReady(),
     slackWebhookConfigured: hasSlackInvoiceWebhook,
     schedule: process.env.INVOICE_ALERT_CRON || "0 8 * * *",
     timezone: "America/New_York",
@@ -19,10 +21,10 @@ router.get("/status", (_req, res) => {
  * Query: ?notifyWhenClear=true — Slack even when nothing is due
  */
 router.post("/run", async (req, res) => {
-  if (!hasQuickBooksConfig) {
+  if (!(await isQuickBooksReady())) {
     return res.status(400).json({
       error:
-        "QuickBooks is not configured. Set QBO_CLIENT_ID, QBO_CLIENT_SECRET, QBO_REFRESH_TOKEN, QBO_REALM_ID (and optionally QBO_ENVIRONMENT).",
+        "QuickBooks is not connected. Complete OAuth at /api/integrations/quickbooks/connect first.",
     });
   }
 
@@ -39,7 +41,7 @@ router.post("/run", async (req, res) => {
     const result = await runInvoiceDueAlerts({ dryRun, notifyWhenClear });
     return res.json(result);
   } catch (error) {
-    console.error("Manual invoice alert run failed:", error);
+    console.error("Manual invoice alert run failed:", error.message);
     return res.status(500).json({
       error: error.message || "Failed to run invoice due alerts",
     });

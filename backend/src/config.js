@@ -18,12 +18,22 @@ export const config = {
   bigoEmailClientId: process.env.BIGO_EMAIL_GMAIL_CLIENT_ID || "",
   bigoEmailClientSecret: process.env.BIGO_EMAIL_GMAIL_CLIENT_SECRET || "",
   bigoEmailRefreshToken: process.env.BIGO_EMAIL_GMAIL_REFRESH_TOKEN || "",
-  // QuickBooks Online (invoice alerts)
+  // QuickBooks Online (sandbox development first)
   qboClientId: process.env.QBO_CLIENT_ID || "",
   qboClientSecret: process.env.QBO_CLIENT_SECRET || "",
+  /** Legacy/manual tokens — preferred source is Mongo QuickBooksConnection after OAuth */
   qboRefreshToken: process.env.QBO_REFRESH_TOKEN || "",
   qboRealmId: process.env.QBO_REALM_ID || "",
   qboEnvironment: (process.env.QBO_ENVIRONMENT || "sandbox").toLowerCase(),
+  /** Must match Redirect URI registered in Intuit Developer (NLM-app) */
+  qboRedirectUri: process.env.QBO_REDIRECT_URI || "",
+  /** Browser redirect after successful OAuth (no tokens in URL) */
+  qboFrontendSuccessUrl:
+    process.env.QBO_FRONTEND_SUCCESS_URL ||
+    "http://localhost:5173/accounting/invoices?qbo=connected",
+  qboFrontendErrorUrl:
+    process.env.QBO_FRONTEND_ERROR_URL ||
+    "http://localhost:5173/accounting/invoices?qbo=error",
   // Slack — accounting invoice alerts
   slackInvoiceWebhookUrl: process.env.SLACK_INVOICE_WEBHOOK_URL || "",
   // Slack — Sales outreach sheet activity
@@ -45,8 +55,15 @@ export const hasGoogleSheetsConfig = Boolean(
 export const hasBigoEmailConfig = Boolean(
   config.bigoEmailClientId && config.bigoEmailClientSecret && config.bigoEmailRefreshToken
 );
+/** App credentials present — enough to start OAuth */
+export const hasQuickBooksAppConfig = Boolean(config.qboClientId && config.qboClientSecret);
+
+/**
+ * Legacy: env refresh + realm (invoice alerts used this before OAuth).
+ * Runtime connection status should use getQuickBooksConnectionStatus().
+ */
 export const hasQuickBooksConfig = Boolean(
-  config.qboClientId && config.qboClientSecret && config.qboRefreshToken && config.qboRealmId
+  hasQuickBooksAppConfig && config.qboRefreshToken && config.qboRealmId
 );
 export const hasSlackInvoiceWebhook = Boolean(config.slackInvoiceWebhookUrl);
 export const hasSlackOutreachWebhook = Boolean(config.slackOutreachWebhookUrl);
