@@ -11,6 +11,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 
 const ROLE_OPTIONS = [
   { value: "media_buyer", label: "Media buyer" },
+  { value: "tech", label: "Tech" },
   { value: "admin", label: "Admin" },
   { value: "ceo", label: "CEO" },
 ];

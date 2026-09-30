@@ -120,10 +120,8 @@ export async function fetchQuickBooksStatus() {
   return response.data;
 }
 
-export async function fetchQuickBooksInvoices({ limit = 1000 } = {}) {
-  const response = await api.get("/integrations/quickbooks/invoices", {
-    params: { limit },
-  });
+export async function fetchQuickBooksInvoices() {
+  const response = await api.get("/integrations/quickbooks/invoices");
   return response.data;
 }
 
@@ -138,6 +136,23 @@ export async function startQuickBooksConnect() {
   const response = await api.get("/integrations/quickbooks/connect", {
     params: { format: "json" },
   });
+  return response.data;
+}
+
+export async function fetchQuickBooksBuyersAr() {
+  const response = await api.get("/integrations/quickbooks/buyers");
+  return response.data;
+}
+
+export async function createQuickBooksInvoicePayment(payload) {
+  const response = await api.post("/integrations/quickbooks/payments", payload);
+  return response.data;
+}
+
+export async function deleteQuickBooksInvoicePayment(paymentId) {
+  const response = await api.delete(
+    `/integrations/quickbooks/payments/${encodeURIComponent(paymentId)}`
+  );
   return response.data;
 }
 
@@ -306,6 +321,16 @@ export async function deletePnLExpense(id) {
   const response = await api.delete(`/accounting/pnl/expenses/${id}`, {
     params: { hard: true },
   });
+  return response.data;
+}
+
+export async function fetchMbConfig() {
+  const response = await api.get("/page-builder/mb-config");
+  return response.data;
+}
+
+export async function saveMbConfig(updates) {
+  const response = await api.put("/page-builder/mb-config", { updates });
   return response.data;
 }
 

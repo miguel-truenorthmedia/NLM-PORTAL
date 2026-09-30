@@ -240,7 +240,7 @@ export default function InvoicesTab() {
     <div className="invoices-page">
       <div className="section-head">
         <div>
-          <h3>Invoices</h3>
+          <h3>Invoice Overview</h3>
           <p className="subtle">
             Accounts receivable from QuickBooks (source of truth).{" "}
             {environment === "sandbox" ? (
@@ -276,8 +276,8 @@ export default function InvoicesTab() {
           </h4>
           <p className="subtle">
             {/reconnect|expired|authorization/i.test(error)
-              ? "Your QuickBooks session expired. Reconnect the sandbox company to reload invoices."
-              : "Connect your QuickBooks sandbox company to load invoices. Tokens stay on the server."}
+              ? "Your QuickBooks session expired. Reconnect to reload invoices."
+              : "Connect your QuickBooks company to load invoices. Tokens stay encrypted on the server."}
           </p>
           <button
             type="button"

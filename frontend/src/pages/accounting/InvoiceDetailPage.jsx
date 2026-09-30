@@ -188,7 +188,7 @@ export default function InvoiceDetailPage() {
               : "QuickBooks not connected"}
           </h4>
           <p className="subtle">
-            Connect the sandbox company to load this invoice. Tokens stay on the server.
+            Connect QuickBooks to load this invoice. Tokens stay encrypted on the server.
           </p>
           <button
             type="button"

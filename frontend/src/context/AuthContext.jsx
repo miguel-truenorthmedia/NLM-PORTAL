@@ -53,15 +53,20 @@ export function AuthProvider({ children }) {
     () => {
       const role = String(user?.role || "").toLowerCase();
       const isMediaBuyer = role === "media_buyer";
+      const isTech = role === "tech";
+      const isCeo = role === "ceo";
       return {
         user,
         loading,
         isAuthenticated: Boolean(user),
         isAdmin: role === "admin",
-        isCeo: role === "ceo",
+        isCeo,
+        isTech,
         isMediaBuyer,
         /** Accounting / Sales / Todo / Users — not for media buyers */
         canAccessOpsPages: Boolean(user) && !isMediaBuyer,
+        /** Page Builder — media buyer, tech, and CEO only */
+        canAccessPageBuilder: Boolean(user) && (isMediaBuyer || isTech || isCeo),
         canAccessTodo: isTodoOwner(user),
         login,
         logout,

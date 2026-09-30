@@ -19,7 +19,7 @@ const userInviteSchema = new mongoose.Schema(
     token: { type: String, required: true, unique: true, index: true },
     type: { type: String, enum: INVITE_TYPES, required: true },
     email: { type: String, required: true, lowercase: true, trim: true, index: true },
-    role: { type: String, enum: ["admin", "ceo", "media_buyer"], default: "media_buyer" },
+    role: { type: String, enum: ["admin", "ceo", "tech", "media_buyer"], default: "media_buyer" },
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     status: { type: String, enum: INVITE_STATUSES, default: "pending", index: true },
     expiresAt: { type: Date, required: true, index: true },

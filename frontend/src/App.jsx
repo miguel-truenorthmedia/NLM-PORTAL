@@ -13,7 +13,9 @@ import LoginPage from "./pages/LoginPage.jsx";
 import UsersPage from "./pages/UsersPage.jsx";
 import AccountingLayout from "./pages/accounting/AccountingLayout.jsx";
 import BuyersTab from "./pages/accounting/BuyersTab.jsx";
+import InvoiceBuyersTab from "./pages/accounting/InvoiceBuyersTab.jsx";
 import InvoiceDetailPage from "./pages/accounting/InvoiceDetailPage.jsx";
+import InvoicesLayout from "./pages/accounting/InvoicesLayout.jsx";
 import InvoicesTab from "./pages/accounting/InvoicesTab.jsx";
 import PnLHistoricalTab from "./pages/accounting/PnLHistoricalTab.jsx";
 import PnLTab from "./pages/accounting/PnLTab.jsx";
@@ -23,13 +25,24 @@ import OutreachSheetTab from "./pages/sales/OutreachSheetTab.jsx";
 import TodoLayout from "./pages/todo/TodoLayout.jsx";
 import TodoSheetTab from "./pages/todo/TodoSheetTab.jsx";
 import SopPage from "./pages/SopPage.jsx";
+import PageBuilderLayout from "./pages/pageBuilder/PageBuilderLayout.jsx";
+import LandingPageBuilderTab from "./pages/pageBuilder/LandingPageBuilderTab.jsx";
+import UrlBuilderTab from "./pages/pageBuilder/UrlBuilderTab.jsx";
 import { redirectToLogin } from "./utils/authRedirect.js";
 import logoDark from "../assets/nlm_logo_dark.png";
 import logoLight from "../assets/nlm_logo_light.png";
 
 function AppHeader() {
   const { theme } = useTheme();
-  const { user, logout, isAuthenticated, isCeo, canAccessTodo, canAccessOpsPages } = useAuth();
+  const {
+    user,
+    logout,
+    isAuthenticated,
+    isCeo,
+    canAccessTodo,
+    canAccessOpsPages,
+    canAccessPageBuilder,
+  } = useAuth();
   const logoSrc = theme === "dark" ? logoLight : logoDark;
 
   async function handleLogout() {
@@ -51,6 +64,14 @@ function AppHeader() {
         >
           Campaign Performance
         </NavLink>
+        {canAccessPageBuilder ? (
+          <NavLink
+            to="/page-builder"
+            className={({ isActive }) => (isActive ? "nav-link nav-link--active" : "nav-link")}
+          >
+            Page Builder
+          </NavLink>
+        ) : null}
         {canAccessOpsPages ? (
           <NavLink
             to="/accounting"
@@ -146,7 +167,10 @@ export default function App() {
         <Route index element={<Navigate to="reconciliation" replace />} />
         <Route path="reconciliation" element={<ReconciliationTab />} />
         <Route path="buyers" element={<BuyersTab />} />
-        <Route path="invoices" element={<InvoicesTab />} />
+        <Route path="invoices" element={<InvoicesLayout />}>
+          <Route index element={<InvoicesTab />} />
+          <Route path="buyers" element={<InvoiceBuyersTab />} />
+        </Route>
         <Route path="invoices/:invoiceId" element={<InvoiceDetailPage />} />
         <Route path="pnl" element={<PnLTab />} />
         <Route path="pnl-historical" element={<PnLHistoricalTab />} />
@@ -178,6 +202,19 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/page-builder"
+        element={
+          <ProtectedRoute pageBuilderOnly>
+            <AppLayout>
+              <PageBuilderLayout />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<LandingPageBuilderTab />} />
+        <Route path="url" element={<UrlBuilderTab />} />
+      </Route>
       <Route
         path="/todo"
         element={

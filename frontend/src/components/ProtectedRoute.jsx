@@ -9,8 +9,17 @@ export default function ProtectedRoute({
   ceoOnly = false,
   todoOwnerOnly = false,
   opsOnly = false,
+  pageBuilderOnly = false,
 }) {
-  const { user, loading, isAuthenticated, isCeo, canAccessTodo, canAccessOpsPages } = useAuth();
+  const {
+    user,
+    loading,
+    isAuthenticated,
+    isCeo,
+    canAccessTodo,
+    canAccessOpsPages,
+    canAccessPageBuilder,
+  } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -32,6 +41,10 @@ export default function ProtectedRoute({
   }
 
   if (opsOnly && !canAccessOpsPages) {
+    return <Navigate to="/" replace />;
+  }
+
+  if (pageBuilderOnly && !canAccessPageBuilder) {
     return <Navigate to="/" replace />;
   }
 

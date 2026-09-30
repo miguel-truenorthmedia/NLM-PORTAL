@@ -2,7 +2,7 @@ import { User } from "../models/User.js";
 import { INVITE_TTL_MS, UserInvite } from "../models/UserInvite.js";
 import { createUser, findUserByEmail, findUserById, hashPassword, sanitizeUser } from "./authService.js";
 
-const ROLES = ["admin", "ceo", "media_buyer"];
+const ROLES = ["admin", "ceo", "tech", "media_buyer"];
 
 function actorFromUser(user) {
   if (!user) return { userId: "", name: "", email: "" };

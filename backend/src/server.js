@@ -25,6 +25,7 @@ import reconciliationRoutes from "./routes/reconciliationRoutes.js";
 import syncRoutes from "./routes/syncRoutes.js";
 import todoRoutes from "./routes/todoRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
+import pageBuilderRoutes from "./routes/pageBuilderRoutes.js";
 import { User } from "./models/User.js";
 import { createUser } from "./services/authService.js";
 
@@ -41,12 +42,20 @@ app.get("/api/health", (_req, res) => {
     mongoConnected: hasMongoConfig,
     authEnabled: hasAuthConfig,
     quickBooksConfigured: hasQuickBooksAppConfig,
+    quickBooks: {
+      environment: config.qboEnvironment === "production" ? "production" : "sandbox",
+      allowWrites: Boolean(config.qboAllowWrites),
+      tokenEncryptionConfigured: Boolean(
+        String(config.qboTokenEncryptionKey || "").trim()
+      ),
+    },
   });
 });
 
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/campaign", requireAuth, campaignRoutes);
+app.use("/api/page-builder", requireAuth, pageBuilderRoutes);
 app.use("/api/reconciliation", requireAuth, forbidMediaBuyer, reconciliationRoutes);
 app.use("/api/buyers", requireAuth, forbidMediaBuyer, buyerRoutes);
 app.use("/api/outreach", requireAuth, forbidMediaBuyer, outreachRoutes);
