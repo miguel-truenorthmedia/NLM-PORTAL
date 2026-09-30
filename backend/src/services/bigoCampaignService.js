@@ -199,18 +199,36 @@ export function resolveRingbaFilters({ linkedAccount, advertiserName } = {}) {
   };
 }
 
+/** Case-insensitive exact key. Do not substring-match ("25K - C5" must not hit "C5"). */
+function normalizeTagKey(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function accountTagFilter(ringbaAccountTag) {
+  const tag = String(ringbaAccountTag || "").trim();
+  if (!tag) return null;
+  // anyConditionToMatch is honored; a bare column filter on this tag is not.
+  return {
+    anyConditionToMatch: [
+      { column: "tag:User:account", value: tag, comparisonType: "EQUALS" },
+    ],
+  };
+}
+
 /**
  * Account-level Ringba rollup for a BIGO advertiser.
  *
- * Ringba /insights often ignores filter clauses and still returns every campaign
- * plus a blank grand-total rollup. Never trust that blank rollup when we know the
- * Ringba campaign name — pick the matching campaign row (same numbers as Ringba UI).
+ * Several BIGO accounts can share one Ringba offer (NLM - Final Expense).
+ * That offer total belongs to nobody in particular. When an account tag is set,
+ * use tag:User:account. Fall back to the offer total only when this BIGO account
+ * is the only one mapped to that offer (for example Medicare).
  */
 async function fetchRingbaAccountInsights({
   dayYmd,
   publisherName,
   campaignName,
   ringbaAccountTag = "",
+  sharedOfferCampaign = false,
 }) {
   if (!hasRingbaConfig) {
     return { incomingCalls: 0, revenue: 0 };
@@ -242,7 +260,34 @@ async function fetchRingbaAccountInsights({
     maxResultsPerGroup: 1000,
   };
 
-  // 1) Prefer exact Ringba campaign row (matches Campaign tab in Ringba UI)
+  // Account tag first. A shared offer campaign total would copy FE-1 onto FE-2.
+  if (targetTag) {
+    try {
+      const data = await ringbaPost("/insights", {
+        ...basePayload,
+        filters: [],
+        groupByColumns: [{ column: "tag:User:account", displayName: "User:account" }],
+      });
+      const records = data?.report?.records || [];
+      const match = records.find(
+        (r) => String(r["tag:User:account"] || "").trim() === targetTag
+      );
+      if (match) {
+        return {
+          incomingCalls: parseNumber(match.callCount),
+          revenue: parseNumber(match.conversionAmount),
+        };
+      }
+    } catch (err) {
+      console.warn("Ringba account-tag insights failed:", err.message);
+    }
+
+    if (sharedOfferCampaign) {
+      return { incomingCalls: 0, revenue: 0 };
+    }
+  }
+
+  // Sole BIGO account on this offer — offer row matches that account.
   if (targetCampaign) {
     try {
       const data = await ringbaPost("/insights", {
@@ -265,29 +310,6 @@ async function fetchRingbaAccountInsights({
     }
   }
 
-  // 2) Fall back to account-tag row (Overview-style). Skip blank "-no value-" / rollup.
-  if (targetTag) {
-    try {
-      const data = await ringbaPost("/insights", {
-        ...basePayload,
-        filters: [],
-        groupByColumns: [{ column: "tag:User:account", displayName: "User:account" }],
-      });
-      const records = data?.report?.records || [];
-      const match = records.find(
-        (r) => String(r["tag:User:account"] || "").trim() === targetTag
-      );
-      if (match) {
-        return {
-          incomingCalls: parseNumber(match.callCount),
-          revenue: parseNumber(match.conversionAmount),
-        };
-      }
-    } catch (err) {
-      console.warn("Ringba account-tag insights failed:", err.message);
-    }
-  }
-
   return { incomingCalls: 0, revenue: 0 };
 }
 
@@ -295,11 +317,18 @@ async function fetchRingbaAccountInsights({
  * Campaign-level Ringba metrics grouped by tag:User:Campaign Name.
  * BIGO campaign names (e.g. "Franz - Low Bid") match this tag 1:1.
  */
-async function fetchRingbaByCampaignTag({ dayYmd, publisherName, campaignName }) {
+async function fetchRingbaByCampaignTag({
+  dayYmd,
+  publisherName,
+  campaignName,
+  ringbaAccountTag = "",
+}) {
   if (!hasRingbaConfig) return new Map();
 
   const { reportStart, reportEnd } = etDayWindow(dayYmd);
   const filters = [];
+  const tagFilter = accountTagFilter(ringbaAccountTag);
+  if (tagFilter) filters.push(tagFilter);
   // Scope to the BIGO account's Ringba publisher + offer campaign when known
   if (publisherName) {
     filters.push({
@@ -345,7 +374,7 @@ async function fetchRingbaByCampaignTag({ dayYmd, publisherName, campaignName })
   for (const row of records) {
     const raw = String(row["tag:User:Campaign Name"] ?? "").trim();
     if (!raw || raw === "-no value-") continue;
-    const key = raw.toLowerCase();
+    const key = normalizeTagKey(raw);
     byName.set(key, {
       name: raw,
       incomingCalls: parseNumber(row.callCount),
@@ -361,11 +390,18 @@ async function fetchRingbaByCampaignTag({ dayYmd, publisherName, campaignName })
  * Ad-group-level Ringba metrics grouped by tag:User:Ad group Name.
  * Matches BIGO ad set names (e.g. "B2-Copy1-1787662639").
  */
-async function fetchRingbaByAdGroupTag({ dayYmd, publisherName, campaignName }) {
+async function fetchRingbaByAdGroupTag({
+  dayYmd,
+  publisherName,
+  campaignName,
+  ringbaAccountTag = "",
+}) {
   if (!hasRingbaConfig) return new Map();
 
   const { reportStart, reportEnd } = etDayWindow(dayYmd);
   const filters = [];
+  const tagFilter = accountTagFilter(ringbaAccountTag);
+  if (tagFilter) filters.push(tagFilter);
   if (publisherName) {
     filters.push({
       column: "publisherName",
@@ -410,7 +446,7 @@ async function fetchRingbaByAdGroupTag({ dayYmd, publisherName, campaignName }) 
   for (const row of records) {
     const raw = String(row["tag:User:Ad group Name"] ?? "").trim();
     if (!raw || raw === "-no value-") continue;
-    const key = raw.toLowerCase();
+    const key = normalizeTagKey(raw);
     byName.set(key, {
       name: raw,
       incomingCalls: parseNumber(row.callCount),
@@ -424,27 +460,29 @@ async function fetchRingbaByAdGroupTag({ dayYmd, publisherName, campaignName }) 
 
 function lookupCampaignRingba(byName, campaignName) {
   if (!byName?.size || !campaignName) return null;
-  const exact = byName.get(String(campaignName).trim().toLowerCase());
-  if (exact) return exact;
-  // Loose contains match if names differ slightly
-  const needle = String(campaignName).trim().toLowerCase();
-  for (const [key, val] of byName.entries()) {
-    if (key.includes(needle) || needle.includes(key)) return val;
-  }
-  return null;
+  // Exact only. Substring matching attached FE-1 tag "C5" to BIGO ad set "25K - C5".
+  return byName.get(normalizeTagKey(campaignName)) || null;
 }
 
 /**
  * Per-adset Ringba attribution via publisherSubId.
  * Same publisher + campaign filters as account insights; returns Map<subId, {calls, revenue}>.
  */
-async function fetchRingbaMetricsBySubId({ dayYmd, publisherName, campaignName, ringbaCampaignId }) {
+async function fetchRingbaMetricsBySubId({
+  dayYmd,
+  publisherName,
+  campaignName,
+  ringbaCampaignId,
+  ringbaAccountTag = "",
+}) {
   const empty = new Map();
   if (!hasRingbaConfig) return empty;
-  if (!publisherName && !campaignName && !ringbaCampaignId) return empty;
+  if (!publisherName && !campaignName && !ringbaCampaignId && !ringbaAccountTag) return empty;
 
   const { reportStart, reportEnd } = etDayWindow(dayYmd);
   const filters = [];
+  const tagFilter = accountTagFilter(ringbaAccountTag);
+  if (tagFilter) filters.push(tagFilter);
   if (publisherName) {
     filters.push({
       anyConditionToMatch: [
@@ -727,6 +765,14 @@ export async function getControllerLive() {
       linkedAccount: linked,
       advertiserName: group.advertiserName,
     });
+    const offerKey = String(ringbaFilters.campaignName || "").trim().toLowerCase();
+    const sharedOfferCampaign = Boolean(
+      offerKey &&
+        adAccounts.filter(
+          (account) =>
+            String(account.ringbaCampaignName || "").trim().toLowerCase() === offerKey
+        ).length > 1
+    );
 
     let accountRingba = { incomingCalls: 0, revenue: 0 };
     try {
@@ -735,6 +781,7 @@ export async function getControllerLive() {
         publisherName: ringbaFilters.publisherName,
         campaignName: ringbaFilters.campaignName,
         ringbaAccountTag: ringbaFilters.ringbaAccountTag,
+        sharedOfferCampaign,
       });
     } catch (err) {
       console.warn("Ringba account insights failed:", err.message);
@@ -751,6 +798,7 @@ export async function getControllerLive() {
         dayYmd: day,
         publisherName: ringbaFilters.publisherName,
         campaignName: ringbaFilters.campaignName,
+        ringbaAccountTag: ringbaFilters.ringbaAccountTag,
       });
     } catch (err) {
       console.warn("Ringba campaign-tag insights failed:", err.message);
@@ -763,6 +811,7 @@ export async function getControllerLive() {
         dayYmd: day,
         publisherName: ringbaFilters.publisherName,
         campaignName: ringbaFilters.campaignName,
+        ringbaAccountTag: ringbaFilters.ringbaAccountTag,
       });
     } catch (err) {
       console.warn("Ringba ad-group-tag insights failed:", err.message);
@@ -776,6 +825,7 @@ export async function getControllerLive() {
         publisherName: ringbaFilters.publisherName,
         campaignName: ringbaFilters.campaignName,
         ringbaCampaignId: ringbaFilters.ringbaCampaignId,
+        ringbaAccountTag: ringbaFilters.ringbaAccountTag,
       });
     } catch (err) {
       console.warn("Ringba calllog attribution failed:", err.message);
