@@ -204,15 +204,19 @@ function normalizeTagKey(value) {
   return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function accountTagFilter(ringbaAccountTag) {
-  const tag = String(ringbaAccountTag || "").trim();
-  if (!tag) return null;
-  // anyConditionToMatch is honored; a bare column filter on this tag is not.
+function ringbaEqualsFilter(column, value) {
+  const v = String(value || "").trim();
+  if (!v) return null;
+  // Bare column filters are ignored. anyConditionToMatch is the form Ringba honors.
   return {
     anyConditionToMatch: [
-      { column: "tag:User:account", value: tag, comparisonType: "EQUALS" },
+      { column, value: v, isNegativeMatch: false, comparisonType: "EQUALS" },
     ],
   };
+}
+
+function accountTagFilter(ringbaAccountTag) {
+  return ringbaEqualsFilter("tag:User:account", ringbaAccountTag);
 }
 
 /**
@@ -314,8 +318,79 @@ async function fetchRingbaAccountInsights({
 }
 
 /**
- * Campaign-level Ringba metrics grouped by tag:User:Campaign Name.
- * BIGO campaign names (e.g. "Franz - Low Bid") match this tag 1:1.
+ * Insights grouped by one user tag, scoped to this BIGO account and its Ringba offer.
+ * New landers send campaign_name / ad_group_name. Older calls use "Campaign Name" /
+ * "Ad group Name". Callers merge both.
+ */
+async function fetchRingbaUserTagMap({
+  dayYmd,
+  publisherName,
+  campaignName,
+  ringbaAccountTag = "",
+  tagColumn,
+}) {
+  if (!hasRingbaConfig) return new Map();
+
+  const { reportStart, reportEnd } = etDayWindow(dayYmd);
+  const filters = [];
+  const accountFilter = accountTagFilter(ringbaAccountTag);
+  const offerFilter = ringbaEqualsFilter("campaignName", campaignName);
+  if (accountFilter) filters.push(accountFilter);
+  if (offerFilter) filters.push(offerFilter);
+  if (!accountFilter && publisherName) {
+    const publisherFilter = ringbaEqualsFilter("publisherName", publisherName);
+    if (publisherFilter) filters.push(publisherFilter);
+  }
+
+  const data = await ringbaPost("/insights", {
+    reportStart,
+    reportEnd,
+    filters,
+    groupByColumns: [{ column: tagColumn, displayName: tagColumn }],
+    orderByColumns: [{ column: "callCount", direction: "desc" }],
+    valueColumns: [
+      { column: "callCount", aggregateFunction: null },
+      { column: "liveCallCount", aggregateFunction: null },
+      { column: "convertedCalls", aggregateFunction: null },
+      { column: "conversionAmount", aggregateFunction: null },
+      { column: "payoutAmount", aggregateFunction: null },
+    ],
+    formatPercentages: true,
+    formatTimeZone: "America/New_York",
+    formatTimespans: true,
+    generateRollups: true,
+    maxResultsPerGroup: 1000,
+  });
+
+  const records = data?.report?.records || [];
+  const byName = new Map();
+  for (const row of records) {
+    const raw = String(row[tagColumn] ?? "").trim();
+    if (!raw || raw === "-no value-") continue;
+    const key = normalizeTagKey(raw);
+    byName.set(key, {
+      name: raw,
+      incomingCalls: parseNumber(row.callCount),
+      revenue: parseNumber(row.conversionAmount),
+      payout: parseNumber(row.payoutAmount),
+    });
+  }
+  return byName;
+}
+
+/** Later maps win on the same name. Snake_case lander tags are passed last. */
+function mergeTagMaps(...maps) {
+  const out = new Map();
+  for (const map of maps) {
+    if (!map) continue;
+    for (const [key, value] of map.entries()) out.set(key, value);
+  }
+  return out;
+}
+
+/**
+ * BIGO campaign name → Ringba tag.
+ * `campaign_name` is the current lander param. `Campaign Name` is the older tag.
  */
 async function fetchRingbaByCampaignTag({
   dayYmd,
@@ -323,72 +398,23 @@ async function fetchRingbaByCampaignTag({
   campaignName,
   ringbaAccountTag = "",
 }) {
-  if (!hasRingbaConfig) return new Map();
-
-  const { reportStart, reportEnd } = etDayWindow(dayYmd);
-  const filters = [];
-  const tagFilter = accountTagFilter(ringbaAccountTag);
-  if (tagFilter) filters.push(tagFilter);
-  // Scope to the BIGO account's Ringba publisher + offer campaign when known
-  if (publisherName) {
-    filters.push({
-      column: "publisherName",
-      value: publisherName,
-      isNegativeMatch: false,
-      comparisonType: "EQUALS",
-    });
-  }
-  if (campaignName) {
-    filters.push({
-      column: "campaignName",
-      value: campaignName,
-      isNegativeMatch: false,
-      comparisonType: "EQUALS",
-    });
-  }
-
-  const payload = {
-    reportStart,
-    reportEnd,
-    filters,
-    groupByColumns: [{ column: "tag:User:Campaign Name", displayName: "User:Campaign Name" }],
-    orderByColumns: [{ column: "callCount", direction: "desc" }],
-    valueColumns: [
-      { column: "callCount", aggregateFunction: null },
-      { column: "liveCallCount", aggregateFunction: null },
-      { column: "convertedCalls", aggregateFunction: null },
-      { column: "conversionAmount", aggregateFunction: null },
-      { column: "payoutAmount", aggregateFunction: null },
-    ],
-    formatPercentages: true,
-    formatTimeZone: "America/New_York",
-    formatTimespans: true,
-    generateRollups: true,
-    maxResultsPerGroup: 1000,
+  const shared = {
+    dayYmd,
+    publisherName,
+    campaignName,
+    ringbaAccountTag,
   };
-
-  const data = await ringbaPost("/insights", payload);
-  const records = data?.report?.records || [];
-  const byName = new Map();
-
-  for (const row of records) {
-    const raw = String(row["tag:User:Campaign Name"] ?? "").trim();
-    if (!raw || raw === "-no value-") continue;
-    const key = normalizeTagKey(raw);
-    byName.set(key, {
-      name: raw,
-      incomingCalls: parseNumber(row.callCount),
-      revenue: parseNumber(row.conversionAmount),
-      payout: parseNumber(row.payoutAmount),
-    });
-  }
-
-  return byName;
+  const [legacy, current] = await Promise.all([
+    fetchRingbaUserTagMap({ ...shared, tagColumn: "tag:User:Campaign Name" }),
+    fetchRingbaUserTagMap({ ...shared, tagColumn: "tag:User:campaign_name" }),
+  ]);
+  return mergeTagMaps(legacy, current);
 }
 
 /**
- * Ad-group-level Ringba metrics grouped by tag:User:Ad group Name.
- * Matches BIGO ad set names (e.g. "B2-Copy1-1787662639").
+ * BIGO ad set name → Ringba tag.
+ * `ad_group_name` is the current lander param (values like "25K - C2").
+ * `Ad group Name` is the older tag still used by earlier accounts.
  */
 async function fetchRingbaByAdGroupTag({
   dayYmd,
@@ -396,66 +422,17 @@ async function fetchRingbaByAdGroupTag({
   campaignName,
   ringbaAccountTag = "",
 }) {
-  if (!hasRingbaConfig) return new Map();
-
-  const { reportStart, reportEnd } = etDayWindow(dayYmd);
-  const filters = [];
-  const tagFilter = accountTagFilter(ringbaAccountTag);
-  if (tagFilter) filters.push(tagFilter);
-  if (publisherName) {
-    filters.push({
-      column: "publisherName",
-      value: publisherName,
-      isNegativeMatch: false,
-      comparisonType: "EQUALS",
-    });
-  }
-  if (campaignName) {
-    filters.push({
-      column: "campaignName",
-      value: campaignName,
-      isNegativeMatch: false,
-      comparisonType: "EQUALS",
-    });
-  }
-
-  const payload = {
-    reportStart,
-    reportEnd,
-    filters,
-    groupByColumns: [{ column: "tag:User:Ad group Name", displayName: "User:Ad group Name" }],
-    orderByColumns: [{ column: "callCount", direction: "desc" }],
-    valueColumns: [
-      { column: "callCount", aggregateFunction: null },
-      { column: "liveCallCount", aggregateFunction: null },
-      { column: "convertedCalls", aggregateFunction: null },
-      { column: "conversionAmount", aggregateFunction: null },
-      { column: "payoutAmount", aggregateFunction: null },
-    ],
-    formatPercentages: true,
-    formatTimeZone: "America/New_York",
-    formatTimespans: true,
-    generateRollups: true,
-    maxResultsPerGroup: 1000,
+  const shared = {
+    dayYmd,
+    publisherName,
+    campaignName,
+    ringbaAccountTag,
   };
-
-  const data = await ringbaPost("/insights", payload);
-  const records = data?.report?.records || [];
-  const byName = new Map();
-
-  for (const row of records) {
-    const raw = String(row["tag:User:Ad group Name"] ?? "").trim();
-    if (!raw || raw === "-no value-") continue;
-    const key = normalizeTagKey(raw);
-    byName.set(key, {
-      name: raw,
-      incomingCalls: parseNumber(row.callCount),
-      revenue: parseNumber(row.conversionAmount),
-      payout: parseNumber(row.payoutAmount),
-    });
-  }
-
-  return byName;
+  const [legacy, current] = await Promise.all([
+    fetchRingbaUserTagMap({ ...shared, tagColumn: "tag:User:Ad group Name" }),
+    fetchRingbaUserTagMap({ ...shared, tagColumn: "tag:User:ad_group_name" }),
+  ]);
+  return mergeTagMaps(legacy, current);
 }
 
 function lookupCampaignRingba(byName, campaignName) {
